@@ -1,10 +1,16 @@
-import React, { useMemo, useState } from 'react';
-import { CheckCircle2, AlertTriangle, Info, Save, ArrowLeft, ArrowRight } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { CheckCircle2, AlertTriangle, Info, Loader2, Save, ArrowLeft, ArrowRight } from 'lucide-react';
 import { OrderEntity, PricingItem, ReviewLineItem } from '../../types';
 import { CustomerSiteInfo } from './review/CustomerSiteInfo';
 import { KitchenItemsTable } from './review/KitchenItemsTable';
 import { DetailOptionsPanel } from './review/DetailOptionsPanel';
 import { getRequiredFields } from './review/reviewModel';
+
+/** 저장 시각을 HH:MM 으로 */
+const savedTimeLabel = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 
 interface QuoteStep2ReviewProps {
   orderEntity: OrderEntity;
@@ -13,6 +19,10 @@ interface QuoteStep2ReviewProps {
   setItems: React.Dispatch<React.SetStateAction<ReviewLineItem[]>>;
   pricingItems: PricingItem[];
   promptText: string;
+  /** 견적 초안을 서버에 즉시 저장 */
+  onTempSave: () => void;
+  tempSaving: boolean;
+  lastSavedAt: string | null;
   onPrevStep: () => void;
   onNextStep: () => void;
 }
@@ -28,21 +38,23 @@ export const QuoteStep2Review: React.FC<QuoteStep2ReviewProps> = ({
   setItems,
   pricingItems,
   promptText,
+  onTempSave,
+  tempSaving,
+  lastSavedAt,
   onPrevStep,
   onNextStep,
 }) => {
-  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const requiredFields = useMemo(() => getRequiredFields(orderEntity), [orderEntity]);
   const filledCount = requiredFields.filter((f) => f.ok).length;
   const missingCount = requiredFields.length - filledCount;
-  const unlinkedCount = items.filter((i) => i.status === 'NEEDS_PRICING').length;
+  const unlinkedItems = items.filter((i) => i.status === 'NEEDS_PRICING');
+  const unlinkedCount = unlinkedItems.length;
   const canProceed = missingCount === 0 && unlinkedCount === 0;
 
-  const handleTempSave = () => {
-    const now = new Date();
-    setSavedAt(`오늘 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-  };
+  // 다음 단계 버튼이 잠긴 구체적인 사유
+  const missingNames = requiredFields.filter((f) => !f.ok).map((f) => f.key);
+  const unlinkedNames = unlinkedItems.map((i) => i.name?.trim() || '(품목명 미입력)');
 
   return (
     <div className="space-y-4">
@@ -77,10 +89,19 @@ export const QuoteStep2Review: React.FC<QuoteStep2ReviewProps> = ({
             </span>
           )}
 
-          <button type="button" onClick={handleTempSave} className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-gray-700">
-            {savedAt ? (
+          <button
+            type="button"
+            onClick={onTempSave}
+            disabled={tempSaving}
+            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-gray-700 disabled:opacity-50"
+          >
+            {tempSaving ? (
+              <span className="flex items-center gap-1 text-blue-600">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> 저장 중...
+              </span>
+            ) : lastSavedAt ? (
               <span className="flex items-center gap-1 text-emerald-600">
-                <CheckCircle2 className="w-3.5 h-3.5" /> 임시 저장됨 {savedAt}
+                <CheckCircle2 className="w-3.5 h-3.5" /> 견적 관리에 저장됨 {savedTimeLabel(lastSavedAt)}
               </span>
             ) : (
               <>
@@ -123,12 +144,25 @@ export const QuoteStep2Review: React.FC<QuoteStep2ReviewProps> = ({
         </button>
 
         {!canProceed && (
-          <span className="flex items-center gap-1.5 text-[11px] font-bold text-orange-600 text-center">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            {missingCount > 0
-              ? `필수 정보 ${missingCount}개를 확인하면 다음 단계로 이동할 수 있습니다.`
-              : `미연결 단가 ${unlinkedCount}건 확인 필요`}
-          </span>
+          <div className="flex-1 min-w-0 flex items-start gap-1.5 text-[11px] text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+            <div className="space-y-0.5 min-w-0">
+              <p className="font-bold">아래 항목을 해결하면 원가 계산으로 이동할 수 있습니다.</p>
+              {missingNames.length > 0 && (
+                <p>
+                  <span className="font-semibold">확인 필요 {missingNames.length}건</span>
+                  <span className="text-orange-600/90"> — {missingNames.join(', ')}</span>
+                </p>
+              )}
+              {unlinkedNames.length > 0 && (
+                <p>
+                  <span className="font-semibold">미연결 단가 {unlinkedNames.length}건</span>
+                  <span className="text-orange-600/90"> — {unlinkedNames.join(', ')}</span>
+                  <span className="text-orange-600/70"> (품목 상태 뱃지를 눌러 단가 DB와 연결하세요)</span>
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
         <button

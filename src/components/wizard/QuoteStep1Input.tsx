@@ -13,46 +13,74 @@ import {
   Search,
   Loader2,
 } from 'lucide-react';
-import { OrderEntity, PricingItem, ReviewLineItem } from '../../types';
+import { OrderEntity, ReviewLineItem } from '../../types';
 import { SAMPLE_ORDER_PRESETS } from '../../data/samplePresets';
-import { CustomerSiteInfo } from './review/CustomerSiteInfo';
-import { KitchenItemsTable } from './review/KitchenItemsTable';
-import { DetailOptionsPanel } from './review/DetailOptionsPanel';
-import { AttachedFile, classifyFile, formatFileSize, formatStamp, getRequiredFields } from './review/reviewModel';
+import { AttachedFile, LAYOUT_LABELS, classifyFile, formatFileSize, formatStamp, getRequiredFields } from './review/reviewModel';
 
 const MEMO_MAX_LENGTH = 2000;
 
+/** 저장 시각을 HH:MM 으로 */
+const savedTimeLabel = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
 interface QuoteStep1InputProps {
   orderEntity: OrderEntity;
-  setOrderEntity: React.Dispatch<React.SetStateAction<OrderEntity>>;
   promptText: string;
   setPromptText: (text: string) => void;
   attachedFiles: AttachedFile[];
   setAttachedFiles: React.Dispatch<React.SetStateAction<AttachedFile[]>>;
   reviewItems: ReviewLineItem[];
-  setReviewItems: React.Dispatch<React.SetStateAction<ReviewLineItem[]>>;
-  pricingItems: PricingItem[];
   aiParsingLoading: boolean;
+  /** AI 정보 추출을 한 번이라도 성공했는지 (하단 버튼 문구 결정) */
+  aiExtracted: boolean;
+  /** 견적 초안을 서버에 즉시 저장 */
+  onTempSave: () => void;
+  tempSaving: boolean;
+  /** 마지막 서버 저장 시각 (ISO) */
+  lastSavedAt: string | null;
   onLoadPreset: (index: number) => void;
   onParseAiOrder: () => void;
   onNextStep: () => void;
 }
 
+/** 추출 결과 요약의 읽기 전용 항목 */
+const SummaryField: React.FC<{ label: string; value?: string; required?: boolean }> = ({ label, value, required }) => {
+  const filled = !!value?.trim();
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-gray-500 mb-1">
+        {label} {required && <span className="text-orange-500">*</span>}
+      </p>
+      <div
+        className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium min-h-[30px] flex items-center ${
+          filled ? 'border-gray-200 bg-white text-gray-800' : 'border-orange-300 bg-orange-50/50 text-orange-600'
+        }`}
+      >
+        <span className="truncate">{filled ? value : '확인 필요'}</span>
+      </div>
+    </div>
+  );
+};
+
 /**
- * 견적 마법사 1단계: 자료 입력
- * 좌측에서 도면·메모·사진을 올리고 AI로 정보를 추출하면, 우측에서 추출 결과를 바로 검수합니다.
+ * 견적 마법사 1단계: 자료 입력 (입력 전용)
+ * 도면·메모·사진을 올리고 AI로 정보를 추출합니다.
+ * 값의 수정·품목 확정·단가 DB 연결은 2단계 '규격 검수'에서 진행합니다.
  */
 export const QuoteStep1Input: React.FC<QuoteStep1InputProps> = ({
   orderEntity,
-  setOrderEntity,
   promptText,
   setPromptText,
   attachedFiles,
   setAttachedFiles,
   reviewItems,
-  setReviewItems,
-  pricingItems,
   aiParsingLoading,
+  aiExtracted,
+  onTempSave,
+  tempSaving,
+  lastSavedAt,
   onLoadPreset,
   onParseAiOrder,
   onNextStep,
@@ -60,15 +88,13 @@ export const QuoteStep1Input: React.FC<QuoteStep1InputProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [presetOpen, setPresetOpen] = useState(false);
   const [presetQuery, setPresetQuery] = useState('');
-  const [savedAt, setSavedAt] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 필수 정보 및 단가 연결 검사
+  // 추출 현황 (여기서는 표시만 하고, 실제 보완은 2단계에서 합니다)
   const requiredFields = useMemo(() => getRequiredFields(orderEntity), [orderEntity]);
   const filledCount = requiredFields.filter((f) => f.ok).length;
   const missingCount = requiredFields.length - filledCount;
   const unlinkedCount = reviewItems.filter((i) => i.status === 'NEEDS_PRICING').length;
-  const canProceed = missingCount === 0 && unlinkedCount === 0;
 
   const addFiles = (files: FileList | null) => {
     if (!files?.length) return;
@@ -97,11 +123,6 @@ export const QuoteStep1Input: React.FC<QuoteStep1InputProps> = ({
     });
   };
 
-  const handleTempSave = () => {
-    const now = new Date();
-    setSavedAt(`오늘 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-  };
-
   const filteredPresets = SAMPLE_ORDER_PRESETS.map((p, i) => ({ ...p, index: i })).filter(
     (p) => !presetQuery.trim() || `${p.title} ${p.description} ${p.rawText}`.toLowerCase().includes(presetQuery.toLowerCase())
   );
@@ -113,11 +134,13 @@ export const QuoteStep1Input: React.FC<QuoteStep1InputProps> = ({
       ? 'text-purple-700 bg-purple-50 border-purple-200'
       : 'text-gray-600 bg-gray-100 border-gray-200';
 
+  const d = orderEntity.dimensions;
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* ── 좌측: 상담 자료 입력 ─────────────────────────────── */}
-        <section className="lg:col-span-4 bg-white rounded-xl border border-gray-200 p-4 shadow-xs space-y-4">
+        <section className="lg:col-span-7 bg-white rounded-xl border border-gray-200 p-4 shadow-xs space-y-4">
           <div className="flex items-start gap-2">
             <FileText className="w-5 h-5 text-blue-500 mt-0.5 shrink-0" />
             <div>
@@ -264,7 +287,7 @@ export const QuoteStep1Input: React.FC<QuoteStep1InputProps> = ({
             )}
 
             <textarea
-              rows={9}
+              rows={12}
               value={promptText}
               maxLength={MEMO_MAX_LENGTH}
               onChange={(e) => setPromptText(e.target.value)}
@@ -297,55 +320,89 @@ export const QuoteStep1Input: React.FC<QuoteStep1InputProps> = ({
           </button>
         </section>
 
-        {/* ── 우측: 추출 결과 검수 ─────────────────────────────── */}
-        <section className="lg:col-span-8 bg-white rounded-xl border border-gray-200 p-4 shadow-xs space-y-4">
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        {/* ── 우측: 추출 결과 요약 (읽기 전용) ─────────────────── */}
+        <section className="lg:col-span-5 bg-white rounded-xl border border-gray-200 p-4 shadow-xs space-y-4">
+          <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2">
               <ClipboardCheck className="w-5 h-5 text-blue-500 mt-0.5 shrink-0" />
               <div>
-                <h3 className="text-sm font-bold text-gray-800">추출 결과 검수</h3>
-                <p className="text-[11px] text-gray-500 mt-0.5">AI가 추출한 정보를 검토하고, 필요한 항목을 수정하세요.</p>
+                <h3 className="text-sm font-bold text-gray-800">추출 결과 요약</h3>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {aiExtracted ? 'AI가 추출한 정보입니다. 수정은 다음 단계에서 합니다.' : '아직 추출하지 않았습니다.'}
+                </p>
               </div>
             </div>
+            <span
+              className={`text-[10px] font-bold px-2 py-1 rounded border shrink-0 ${
+                aiExtracted ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-gray-500 bg-gray-100 border-gray-200'
+              }`}
+            >
+              {aiExtracted ? 'AI 추출 완료' : '추출 전'}
+            </span>
+          </div>
 
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-gray-500">필수 정보</span>
-                  <span className="text-xs font-mono font-bold text-blue-600">
-                    {filledCount}/{requiredFields.length}
-                  </span>
-                </div>
-                <div className="w-32 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${missingCount === 0 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                    style={{ width: `${(filledCount / requiredFields.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {missingCount > 0 && (
-                <span className="flex items-center gap-1.5 text-[11px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2.5 py-1.5 rounded-lg">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  확인 필요 {missingCount}건
+          {/* 필수 정보 진행률 */}
+          <div className="rounded-xl border border-gray-200 bg-slate-50/60 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-gray-600">필수 정보</span>
+              <span className="text-xs font-mono font-bold text-blue-600">
+                {filledCount}/{requiredFields.length}
+              </span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${missingCount === 0 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                style={{ width: `${(filledCount / requiredFields.length) * 100}%` }}
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap pt-0.5">
+              <span className="text-[11px] text-gray-500">
+                추출 품목 <b className="font-mono text-gray-700">{reviewItems.length}</b>건
+              </span>
+              {unlinkedCount > 0 && (
+                <span className="text-[11px] font-bold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">
+                  미연결 단가 {unlinkedCount}건
                 </span>
               )}
+            </div>
+          </div>
 
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className={`w-4 h-4 ${savedAt ? 'text-emerald-500' : 'text-gray-300'}`} />
-                <div className="leading-tight">
-                  <p className={`text-[11px] font-bold ${savedAt ? 'text-gray-700' : 'text-gray-400'}`}>
-                    {savedAt ? '임시 저장됨' : '저장 전'}
-                  </p>
-                  {savedAt && <p className="text-[10px] text-gray-400 font-mono">{savedAt}</p>}
-                </div>
+          {/* 고객 및 현장 정보 (읽기 전용) */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-gray-700">고객 및 현장 정보</h4>
+            <div className="grid grid-cols-2 gap-2.5">
+              <SummaryField label="고객명" required value={orderEntity.customerName} />
+              <SummaryField label="연락처" required value={orderEntity.contact} />
+              <div className="col-span-2">
+                <SummaryField label="현장 주소" required value={orderEntity.address} />
+              </div>
+              <div className="col-span-2">
+                <SummaryField label="프로젝트명" required value={orderEntity.projectName} />
+              </div>
+              <SummaryField label="상담일" required value={orderEntity.consultDate} />
+              <SummaryField label="희망 시공일" required value={orderEntity.deliveryDate} />
+              <SummaryField label="고객 유형" required value={orderEntity.customerType} />
+              <SummaryField label="담당자" required value={orderEntity.manager} />
+            </div>
+          </div>
+
+          {/* 주방 구성 (읽기 전용) */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-gray-700">주방 구성</h4>
+            <div className="grid grid-cols-2 gap-2.5">
+              <SummaryField label="주방 배치" value={LAYOUT_LABELS[orderEntity.layoutType]} />
+              <SummaryField label="하부장 길이" required value={d.lowerCabinetLengthMm > 0 ? `${d.lowerCabinetLengthMm.toLocaleString()} mm` : ''} />
+              <SummaryField label="상부장 길이" value={d.upperCabinetLengthMm > 0 ? `${d.upperCabinetLengthMm.toLocaleString()} mm` : '없음'} />
+              <SummaryField label="상판" value={`${orderEntity.countertopOption.brand} ${orderEntity.countertopOption.model}`.trim()} />
+              <div className="col-span-2">
+                <SummaryField label="도어 사양" required value={orderEntity.doorOption.material} />
               </div>
             </div>
           </div>
 
-          <CustomerSiteInfo orderEntity={orderEntity} setOrderEntity={setOrderEntity} />
-          <KitchenItemsTable items={reviewItems} setItems={setReviewItems} pricingItems={pricingItems} />
-          <DetailOptionsPanel orderEntity={orderEntity} setOrderEntity={setOrderEntity} />
+          <p className="text-[11px] text-gray-500 bg-blue-50/60 border border-blue-100 rounded-lg px-3 py-2 leading-relaxed">
+            값 수정, 품목 추가·삭제, 단가 DB 연결은 다음 단계 <b className="text-gray-700">규격 검수</b>에서 진행합니다.
+          </p>
         </section>
       </div>
 
@@ -353,29 +410,41 @@ export const QuoteStep1Input: React.FC<QuoteStep1InputProps> = ({
       <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <button
           type="button"
-          onClick={handleTempSave}
-          className="w-full sm:w-auto border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold px-4 py-2.5 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors"
+          onClick={onTempSave}
+          disabled={tempSaving}
+          className="w-full sm:w-auto border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-semibold px-4 py-2.5 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors"
         >
-          <Save className="w-4 h-4 text-blue-500" />
-          임시 저장
+          {tempSaving ? (
+            <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+          ) : (
+            <Save className="w-4 h-4 text-blue-500" />
+          )}
+          {tempSaving ? '저장 중...' : '임시 저장'}
         </button>
 
-        {!canProceed && (
-          <span className="flex items-center gap-1.5 text-[11px] font-bold text-orange-600 text-center">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            {missingCount > 0
-              ? `필수 정보 ${missingCount}개를 확인하면 다음 단계로 이동할 수 있습니다.`
-              : `미연결 단가 ${unlinkedCount}건 확인 필요`}
-          </span>
-        )}
+        {/* 저장 상태와 누락 안내는 서로 배타적이지 않으므로 함께 표시한다. */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-x-4 gap-y-1 text-[11px]">
+          {lastSavedAt && (
+            <span className="flex items-center gap-1.5 font-bold text-emerald-600">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              견적 관리에 저장됨{' '}
+              <span className="font-mono font-normal text-gray-400">{savedTimeLabel(lastSavedAt)}</span>
+            </span>
+          )}
+          {missingCount > 0 && (
+            <span className="flex items-center gap-1.5 font-medium text-gray-500">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-orange-400" />
+              확인이 필요한 항목 {missingCount}건은 다음 단계에서 보완합니다.
+            </span>
+          )}
+        </div>
 
         <button
           type="button"
-          disabled={!canProceed}
           onClick={onNextStep}
-          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-lg shadow-xs text-xs flex items-center justify-center gap-2 transition-colors"
+          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-lg shadow-xs text-xs flex items-center justify-center gap-2 transition-colors"
         >
-          규격 검수 완료 및 다음 단계
+          {aiExtracted ? '규격 검수로 이동' : '직접 입력으로 검수 시작'}
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   Printer,
   Save,
@@ -10,6 +10,7 @@ import {
   Send,
   GitBranch,
   ShieldAlert,
+  Loader2,
 } from 'lucide-react';
 import { QuoteCalculationResult, OrderEntity, QuoteDocument, QuotePublishMeta } from '../../types';
 
@@ -24,6 +25,10 @@ interface QuoteStep3SummaryProps {
   savedQuote: QuoteDocument | null;
   publishedVersions: QuoteDocument[];
   saving: boolean;
+  /** 견적 초안을 서버에 즉시 저장 */
+  onTempSave: () => void;
+  tempSaving: boolean;
+  lastSavedAt: string | null;
   onSaveQuote: () => void;
   onStartNewVersion: () => void;
   onPrevStep: () => void;
@@ -48,12 +53,14 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
   savedQuote,
   publishedVersions,
   saving,
+  onTempSave,
+  tempSaving,
+  lastSavedAt,
   onSaveQuote,
   onStartNewVersion,
   onPrevStep,
   onNavigateToHistory,
 }) => {
-  const [tempSavedAt, setTempSavedAt] = useState<string | null>(null);
   const published = !!savedQuote;
   const nextVersion = publishedVersions.length + 1;
   const isRevision = publishedVersions.length > 0 && !published;
@@ -80,9 +87,10 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
 
   const quoteNo = savedQuote?.quoteNumber ?? (nextVersion > 1 ? `DRAFT-V${nextVersion}` : 'DRAFT-001');
 
-  const handleTempSave = () => {
-    const n = new Date();
-    setTempSavedAt(`${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`);
+  /** 저장 시각을 HH:MM 으로 */
+  const savedTimeLabel = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
   const inputCls =
@@ -110,11 +118,16 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleTempSave}
-            className="border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold text-xs px-3 py-2 rounded-lg flex items-center gap-1.5"
+            onClick={onTempSave}
+            disabled={tempSaving}
+            className="border border-gray-300 hover:bg-gray-50 disabled:opacity-50 text-gray-700 font-semibold text-xs px-3 py-2 rounded-lg flex items-center gap-1.5"
           >
-            <Save className="w-3.5 h-3.5 text-blue-500" />
-            {tempSavedAt ? `임시 저장됨 ${tempSavedAt}` : '임시 저장'}
+            {tempSaving ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+            ) : (
+              <Save className="w-3.5 h-3.5 text-blue-500" />
+            )}
+            {tempSaving ? '저장 중...' : lastSavedAt ? `저장됨 ${savedTimeLabel(lastSavedAt)}` : '임시 저장'}
           </button>
           <button
             type="button"

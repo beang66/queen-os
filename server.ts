@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
 import multer from 'multer';
@@ -45,6 +46,12 @@ app.get('/api/pricing', (req, res) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 단가표 지문 — 초안에 기록된 값과 비교해 "단가가 바뀌었는지" 판별한다.
+// 주의: '/api/pricing/:id' 보다 먼저 선언해야 :id 로 잡히지 않는다.
+app.get('/api/pricing/fingerprint', (_req, res) => {
+  res.json({ success: true, data: { fingerprint: db.getPricingFingerprint() } });
 });
 
 app.get('/api/pricing/:id', (req, res) => {
@@ -222,7 +229,7 @@ app.post('/api/quotes', (req, res) => {
   try {
     const {
       title, status, targetMarginRate, orderEntity, calculationResult, notes,
-      quoteNumber, version, parentQuoteId, publishMeta,
+      quoteNumber, version, parentQuoteId, publishMeta, draftId,
     } = req.body;
     if (!orderEntity || !calculationResult) {
       return res.status(400).json({ success: false, error: '주문 정보와 계산 결과가 누락되었습니다.' });
@@ -248,6 +255,11 @@ app.post('/api/quotes', (req, res) => {
         email: 'queenkitchen@furniture.kr',
       },
     });
+
+    // 초안에서 발행한 경우 초안을 PUBLISHED 로 전환하고 발행 문서를 연결한다.
+    if (draftId) {
+      db.markDraftPublished(draftId, saved.id);
+    }
 
     res.json({ success: true, data: saved });
   } catch (err: any) {
@@ -278,7 +290,108 @@ app.delete('/api/quotes/:id', (req, res) => {
 });
 
 // ----------------------------------------------------
-// 6. EXCEL EXPORT ENDPOINT
+// 6. QUOTE DRAFT (견적 초안) — 작성 중 데이터 유실 방지
+// ----------------------------------------------------
+app.post('/api/drafts', (req, res) => {
+  try {
+    const { payload, editorId } = req.body;
+    if (!payload || !payload.orderEntity) {
+      return res.status(400).json({ success: false, error: '초안 payload 가 누락되었습니다.' });
+    }
+    const draft = db.createDraft(payload, editorId || 'unknown');
+    res.json({ success: true, data: draft });
+  } catch (err: any) {
+    console.error('Create draft error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/drafts', (req, res) => {
+  try {
+    const status = (req.query.status as string) || 'ACTIVE';
+    res.json({ success: true, data: db.getDrafts(status as any) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/drafts/:id', (req, res) => {
+  try {
+    const draft = db.getDraftById(req.params.id);
+    if (!draft) {
+      return res.status(404).json({ success: false, error: '해당 초안을 찾을 수 없습니다.' });
+    }
+    res.json({
+      success: true,
+      data: draft,
+      // 초안 저장 당시의 단가표와 현재 단가표가 다른지 함께 알려준다.
+      meta: {
+        currentPricingFingerprint: db.getPricingFingerprint(),
+        pricingChanged:
+          !!draft.pricingFingerprint && draft.pricingFingerprint !== db.getPricingFingerprint(),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.put('/api/drafts/:id', (req, res) => {
+  try {
+    const { revision, payload, label, editorId } = req.body;
+    if (typeof revision !== 'number' || !payload) {
+      return res.status(400).json({ success: false, error: 'revision 과 payload 가 필요합니다.' });
+    }
+
+    const result = db.saveDraft(req.params.id, {
+      revision,
+      payload,
+      label,
+      editorId: editorId || 'unknown',
+    });
+
+    if (result.status === 'OK') {
+      return res.json({ success: true, data: result.draft });
+    }
+    if (result.status === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, error: '해당 초안을 찾을 수 없습니다.' });
+    }
+    // 다른 창에서 먼저 저장한 경우 — 덮어쓰지 않고 서버 최신본을 함께 돌려준다.
+    return res.status(409).json({
+      success: false,
+      error: '다른 창에서 이 초안을 먼저 수정했습니다.',
+      conflict: true,
+      data: result.current,
+    });
+  } catch (err: any) {
+    console.error('Save draft error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/drafts/:id/restore', (req, res) => {
+  try {
+    const { revision, editorId } = req.body;
+    const restored = db.restoreDraftRevision(req.params.id, Number(revision), editorId || 'unknown');
+    if (!restored) {
+      return res.status(404).json({ success: false, error: '해당 초안 또는 저장 시점을 찾을 수 없습니다.' });
+    }
+    res.json({ success: true, data: restored });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/drafts/:id', (req, res) => {
+  try {
+    res.json({ success: db.deleteDraft(req.params.id) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// 7. EXCEL EXPORT ENDPOINT
 // ----------------------------------------------------
 app.post('/api/export/quote-excel', (req, res) => {
   try {
@@ -337,12 +450,25 @@ app.post('/api/export/quote-excel', (req, res) => {
 });
 
 // ----------------------------------------------------
-// 7. VITE MIDDLEWARE / STATIC ASSETS
+// 8. VITE MIDDLEWARE / STATIC ASSETS
 // ----------------------------------------------------
 async function startServer() {
+  // Express 를 감싼 HTTP 서버를 직접 만든다. Vite HMR 웹소켓을 이 서버에 얹기 위함.
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== 'production') {
+    // vite.config.ts 의 /api 프록시는 `vite` 단독 실행(:5173) 전용이다.
+    // 미들웨어 모드에서는 이 서버 자신을 가리키는 자기참조 프록시가 되므로 끈다.
+    process.env.QUEEN_MIDDLEWARE_MODE = 'true';
+
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        // HMR 웹소켓을 별도 포트(:24678)가 아니라 이 HTTP 서버(:3000)에 얹는다.
+        // 별도 포트를 쓰면 개발 서버가 중복 실행됐을 때 서로 포트를 뺏고 뺏기며
+        // 브라우저의 HMR 소켓이 끊길 때마다 Vite 클라이언트가 페이지를 새로고침한다.
+        hmr: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -355,7 +481,16 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n[오류] 포트 ${PORT} 가 이미 사용 중입니다. 개발 서버가 이미 실행 중인지 확인하세요.`);
+      console.error(`이 프로세스를 종료합니다. 브라우저에서 http://localhost:${PORT} 로 접속하세요.\n`);
+      process.exit(1);
+    }
+    throw err;
+  });
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`퀸 주방가구 견적/원가 자동화 서버 구동 완료: http://0.0.0.0:${PORT}`);
   });
 }

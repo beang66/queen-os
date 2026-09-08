@@ -19,56 +19,55 @@ const NeedsCheckTag: React.FC = () => (
   </span>
 );
 
+const fieldBox = (filled: boolean) =>
+  `flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 bg-white transition-colors focus-within:border-blue-500 ${
+    filled ? 'border-gray-200' : 'border-orange-400 bg-orange-50/40'
+  }`;
+const bareInput = 'w-full bg-transparent text-xs text-gray-800 font-medium focus:outline-none min-w-0';
+const selectCls =
+  'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 font-medium focus:border-blue-500 focus:outline-none';
+
+/** 값이 인풋 안에 태그와 함께 들어가는 텍스트 필드 (모듈 스코프에 두어 리렌더 시 리마운트되지 않도록 함) */
+const TextField: React.FC<{
+  label: string;
+  required?: boolean;
+  value: string;
+  placeholder?: string;
+  onChange: (v: string) => void;
+  helper?: string;
+  className?: string;
+}> = ({ label, required, value, placeholder, onChange, helper, className }) => {
+  const filled = !!value.trim();
+  return (
+    <div className={className}>
+      <label className="block text-[11px] font-medium text-gray-500 mb-1">
+        {label} {required && <span className="text-orange-500">*</span>}
+      </label>
+      <div className={fieldBox(filled)}>
+        <input className={bareInput} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+        {filled ? <ExtractedTag /> : <NeedsCheckTag />}
+      </div>
+      {!filled && helper && (
+        <p className="text-[10px] text-orange-600 font-medium mt-1 flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" />
+          {helper}
+        </p>
+      )}
+    </div>
+  );
+};
+
+/** 태그가 필드 아래에 붙는 날짜/선택 필드 */
+const BelowTag: React.FC<{ filled: boolean }> = ({ filled }) => (
+  <div className="mt-1 flex justify-end">{filled ? <ExtractedTag /> : <NeedsCheckTag />}</div>
+);
+
 /**
  * 규격 검수 - 고객 및 현장 정보 패널
  * 값이 비어 있는 필수 항목은 '확인 필요'로, AI가 채운 항목은 '상담 메모에서 추출'로 표시합니다.
  */
 export const CustomerSiteInfo: React.FC<CustomerSiteInfoProps> = ({ orderEntity, setOrderEntity }) => {
-  const set = (patch: Partial<OrderEntity>) => setOrderEntity({ ...orderEntity, ...patch });
-
-  const fieldBox = (filled: boolean) =>
-    `flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 bg-white transition-colors focus-within:border-blue-500 ${
-      filled ? 'border-gray-200' : 'border-orange-400 bg-orange-50/40'
-    }`;
-  const bareInput = 'w-full bg-transparent text-xs text-gray-800 font-medium focus:outline-none min-w-0';
-
-  /** 값이 인풋 안에 태그와 함께 들어가는 텍스트 필드 */
-  const TextField: React.FC<{
-    label: string;
-    required?: boolean;
-    value: string;
-    placeholder?: string;
-    onChange: (v: string) => void;
-    helper?: string;
-    className?: string;
-  }> = ({ label, required, value, placeholder, onChange, helper, className }) => {
-    const filled = !!value.trim();
-    return (
-      <div className={className}>
-        <label className="block text-[11px] font-medium text-gray-500 mb-1">
-          {label} {required && <span className="text-orange-500">*</span>}
-        </label>
-        <div className={fieldBox(filled)}>
-          <input className={bareInput} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
-          {filled ? <ExtractedTag /> : <NeedsCheckTag />}
-        </div>
-        {!filled && helper && (
-          <p className="text-[10px] text-orange-600 font-medium mt-1 flex items-center gap-1">
-            <AlertCircle className="w-3 h-3" />
-            {helper}
-          </p>
-        )}
-      </div>
-    );
-  };
-
-  /** 태그가 필드 아래에 붙는 날짜/선택 필드 */
-  const BelowTag: React.FC<{ filled: boolean }> = ({ filled }) => (
-    <div className="mt-1 flex justify-end">{filled ? <ExtractedTag /> : <NeedsCheckTag />}</div>
-  );
-
-  const selectCls =
-    'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 font-medium focus:border-blue-500 focus:outline-none';
+  const set = (patch: Partial<OrderEntity>) => setOrderEntity((prev) => ({ ...prev, ...patch }));
 
   return (
     <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4 space-y-3">
@@ -121,6 +120,10 @@ export const CustomerSiteInfo: React.FC<CustomerSiteInfoProps> = ({ orderEntity,
             <option value="인테리어 업체">인테리어 업체</option>
             <option value="재시공 고객">재시공 고객</option>
             <option value="빌더/시행사">빌더/시행사</option>
+            {orderEntity.customerType &&
+              !['일반 고객', '인테리어 업체', '재시공 고객', '빌더/시행사'].includes(orderEntity.customerType) && (
+                <option value={orderEntity.customerType}>{orderEntity.customerType}</option>
+              )}
           </select>
           <BelowTag filled={!!orderEntity.customerType} />
         </div>
@@ -131,9 +134,12 @@ export const CustomerSiteInfo: React.FC<CustomerSiteInfoProps> = ({ orderEntity,
           </label>
           <select className={selectCls} value={orderEntity.manager ?? ''} onChange={(e) => set({ manager: e.target.value })}>
             <option value="">선택하세요</option>
-            <option value="박지은">박지은</option>
-            <option value="이현우">이현우</option>
-            <option value="최민수">최민수</option>
+            <option value="문하윤">문하윤</option>
+            <option value="안소연">안소연</option>
+            <option value="안정빈">안정빈</option>
+            {orderEntity.manager && !['문하윤', '안소연', '안정빈'].includes(orderEntity.manager) && (
+              <option value={orderEntity.manager}>{orderEntity.manager}</option>
+            )}
           </select>
           <BelowTag filled={!!orderEntity.manager} />
         </div>

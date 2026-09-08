@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { QuoteHistoryFilter } from './history/QuoteHistoryFilter';
 import { QuoteHistoryTable } from './history/QuoteHistoryTable';
 import { QuoteDetailModal } from './history/QuoteDetailModal';
+import { DraftListPanel } from './history/DraftListPanel';
 import { QuoteDocument, QuoteStatus } from '../types';
 
 interface QuoteHistoryAuditProps {
@@ -9,6 +10,8 @@ interface QuoteHistoryAuditProps {
   onRefresh: () => Promise<void>;
   onUpdateStatus: (id: string, status: QuoteStatus) => Promise<void>;
   onDeleteQuote: (id: string) => Promise<void>;
+  /** 초안을 신규 견적 탭에서 이어서 작성 */
+  onResumeDraft: (id: string) => void;
 }
 
 /**
@@ -19,6 +22,7 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
   onRefresh,
   onUpdateStatus,
   onDeleteQuote,
+  onResumeDraft,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'ALL'>('ALL');
@@ -41,6 +45,9 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      {/* 0. 작성 중인 견적 초안 */}
+      <DraftListPanel onResumeDraft={onResumeDraft} />
+
       {/* 1. 검색어 & 상태 필터 바 */}
       <QuoteHistoryFilter
         searchQuery={searchQuery}

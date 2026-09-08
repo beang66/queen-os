@@ -193,6 +193,72 @@ export interface QuoteDocument {
   };
 }
 
+// ---------------------------------------------------------------------------
+// 견적 초안 (Draft) — 신규 견적 작성 시작 시 생성되어 모든 단계 변경사항을 담는다.
+// ---------------------------------------------------------------------------
+
+/** 첨부 파일 메타데이터 (미리보기 base64 는 저장하지 않는다) */
+export interface AttachedFileMeta {
+  id: string;
+  name: string;
+  sizeLabel: string;
+  uploadedAt: string;
+  kind: '도면' | '이미지' | '메모';
+}
+
+/** 마법사 4단계 전체의 작업 상태 스냅샷 */
+export interface DraftPayload {
+  step: 1 | 2 | 3 | 4;
+  promptText: string;
+  attachedFiles: AttachedFileMeta[];
+  orderEntity: OrderEntity;
+  reviewItems: ReviewLineItem[];
+  targetMarginRate: number;
+  calculationResult: QuoteCalculationResult | null;
+  quoteTitle: string;
+  publishMeta: QuotePublishMeta;
+}
+
+/** 초안의 과거 저장 시점 (변경 이력 및 복구용) */
+export interface QuoteDraftRevision {
+  revision: number;
+  savedAt: string;
+  label: string;          // 저장 사유 (자동 저장 / 수동 임시 저장 / 단계 이동 등)
+  payload: DraftPayload;
+}
+
+export type DraftStatus = 'ACTIVE' | 'PUBLISHED' | 'ARCHIVED';
+
+export interface QuoteDraft {
+  id: string;                  // draft-...
+  revision: number;            // 낙관적 잠금 카운터 (동시 편집 충돌 감지)
+  status: DraftStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastEditorId: string;        // 마지막으로 저장한 창(탭) 식별자
+  payload: DraftPayload;
+  history: QuoteDraftRevision[];
+  /** 계산 시점의 단가표 지문 — 이후 단가가 바뀌었는지 판별 */
+  pricingFingerprint: string | null;
+  publishedQuoteIds: string[];
+}
+
+/** 초안 목록에 쓰는 경량 요약 (payload 제외) */
+export interface QuoteDraftSummary {
+  id: string;
+  revision: number;
+  status: DraftStatus;
+  createdAt: string;
+  updatedAt: string;
+  step: 1 | 2 | 3 | 4;
+  customerName: string;
+  projectName: string;
+  quoteTitle: string;
+  itemCount: number;
+  totalAmount: number | null;
+  publishedQuoteIds: string[];
+}
+
 export interface ParsedPriceItem {
   code?: string;
   category: ItemCategory;

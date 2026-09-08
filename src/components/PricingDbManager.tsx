@@ -133,7 +133,7 @@ export const PricingDbManager: React.FC<PricingDbManagerProps> = ({
                 }}
                 onTransferToQuote={() => {
                   setIsExtractorModalOpen(false);
-                  alert('발주서 추출 데이터는 [1. Quote Engine] 마법사 탭에서 사용해주세요.');
+                  alert('발주서 추출 데이터는 [신규 견적] 탭에서 사용해주세요.');
                 }}
               />
             </div>

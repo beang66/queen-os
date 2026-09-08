@@ -41,19 +41,19 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Quick Metrics & System Status */}
           <div className="flex items-center gap-3 sm:gap-4">
-            <span className="flex items-center gap-1.5 text-xs text-green-400 font-mono bg-gray-900/60 px-2.5 py-1 rounded border border-gray-700/80">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-green-400 bg-gray-900/60 px-2.5 py-1 rounded border border-gray-700/80">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-              <span>SYSTEM ONLINE</span>
+              <span>정상 운영</span>
             </span>
 
-            <div className="hidden md:flex items-center gap-2 font-mono text-xs">
+            <div className="hidden md:flex items-center gap-2 text-xs">
               <div className="bg-gray-800 px-2.5 py-1 rounded border border-gray-700 flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-400 uppercase font-semibold">DB Items:</span>
-                <span className="font-bold text-blue-400">{pricingCount}</span>
+                <span className="text-[10px] text-gray-400 font-semibold">단가 품목</span>
+                <span className="font-mono font-bold text-blue-400">{pricingCount}</span>
               </div>
               <div className="bg-gray-800 px-2.5 py-1 rounded border border-gray-700 flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-400 uppercase font-semibold">Quotes:</span>
-                <span className="font-bold text-orange-400">{quotesCount}</span>
+                <span className="text-[10px] text-gray-400 font-semibold">저장 견적</span>
+                <span className="font-mono font-bold text-orange-400">{quotesCount}</span>
               </div>
             </div>
 
@@ -66,50 +66,50 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-blue-600 text-white border-blue-500 font-semibold'
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-200 border-gray-600'
               }`}
-              title="시스템 처리 흐름도 및 파이프라인"
+              title="시스템 구성 및 처리 흐름"
             >
               <SchemaIcon className="w-3.5 h-3.5 text-blue-300" />
-              <span className="hidden sm:inline">ARCHITECTURE</span>
+              <span className="hidden sm:inline">시스템 설정</span>
             </button>
           </div>
         </div>
 
         {/* Navigation Tabs - High Density & Compact */}
-        <div className="flex space-x-1 border-t border-gray-700/80 pt-1 overflow-x-auto scrollbar-none text-xs font-mono">
+        <div className="flex space-x-1 border-t border-gray-700/80 pt-1 overflow-x-auto scrollbar-none text-xs">
           <button
             onClick={() => setActiveTab('wizard')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap uppercase tracking-wider ${
+            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap ${
               activeTab === 'wizard'
                 ? 'border-blue-500 text-white bg-gray-800/90 shadow-inner'
                 : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
             }`}
           >
             <Calculator className="w-3.5 h-3.5 text-blue-400" />
-            <span>1. Quote Engine (신규 견적)</span>
+            <span>신규 견적</span>
           </button>
 
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap uppercase tracking-wider ${
+            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap ${
               activeTab === 'history'
                 ? 'border-blue-500 text-white bg-gray-800/90 shadow-inner'
                 : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
             }`}
           >
             <History className="w-3.5 h-3.5 text-purple-400" />
-            <span>2. Audit & History (견적 이력 감사)</span>
+            <span>견적 관리</span>
           </button>
 
           <button
             onClick={() => setActiveTab('pricing')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap uppercase tracking-wider ${
+            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap ${
               activeTab === 'pricing'
                 ? 'border-blue-500 text-white bg-gray-800/90 shadow-inner'
                 : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
             }`}
           >
             <Database className="w-3.5 h-3.5 text-green-400" />
-            <span>3. Pricing DB (단가표 관리)</span>
+            <span>단가 관리</span>
           </button>
         </div>
       </div>

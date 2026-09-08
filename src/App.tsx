@@ -13,6 +13,8 @@ import { fetchJson } from './lib/api';
  */
 export default function App() {
   const [activeTab, setActiveTab] = useState<'wizard' | 'pricing' | 'history' | 'architecture'>('wizard');
+  // 견적 관리에서 "이어서 작성"을 누른 초안 id (신규 견적 탭으로 전달)
+  const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [pricingItems, setPricingItems] = useState<PricingItem[]>([]);
   const [quotes, setQuotes] = useState<QuoteDocument[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -144,6 +146,7 @@ export default function App() {
     version?: number;
     parentQuoteId?: string;
     publishMeta?: any;
+    draftId?: string;
   }): Promise<QuoteDocument> => {
     const data = await fetchJson<{ data: QuoteDocument }>('/api/quotes', {
       method: 'POST',
@@ -201,6 +204,8 @@ export default function App() {
             pricingItems={pricingItems}
             onSaveQuote={handleSaveQuote}
             onNavigateToHistory={() => setActiveTab('history')}
+            resumeDraftId={resumeDraftId}
+            onResumeHandled={() => setResumeDraftId(null)}
           />
         )}
 
@@ -221,6 +226,10 @@ export default function App() {
             onRefresh={fetchQuotes}
             onUpdateStatus={handleUpdateQuoteStatus}
             onDeleteQuote={handleDeleteQuote}
+            onResumeDraft={(id) => {
+              setResumeDraftId(id);
+              setActiveTab('wizard');
+            }}
           />
         )}
 

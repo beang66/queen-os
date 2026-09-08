@@ -169,7 +169,7 @@ export const SystemDiagram: React.FC = () => {
               </div>
               <div>
                 <strong className="text-gray-900 block font-semibold text-xs">
-                  1. 신규 견적 산출 마법사 (Quote Engine)
+                  1. 신규 견적 — 견적 산출 마법사
                 </strong>
                 3단계 플로우: [주문 분석 & 치수 입력] → [결정론적 원가 산출표 & 마진 시뮬레이터] → [공식 견적서 발행 & PDF/엑셀 내보내기].
               </div>
@@ -191,7 +191,7 @@ export const SystemDiagram: React.FC = () => {
               </div>
               <div>
                 <strong className="text-gray-900 block font-semibold text-xs">
-                  3. 통합 단가표 DB 관리기 (Pricing DB Manager)
+                  3. 단가 관리 — 통합 단가표 DB
                 </strong>
                 7대 카테고리별 자재·가공·시공 단가 검색, 수정, 일괄 인상/인하 시뮬레이션, 표준 단가표 카탈로그 복원.
               </div>
@@ -202,7 +202,7 @@ export const SystemDiagram: React.FC = () => {
               </div>
               <div>
                 <strong className="text-gray-900 block font-semibold text-xs">
-                  4. 견적 이력 및 단가 감사실 (Audit & History)
+                  4. 견적 관리 — 견적 이력 및 단가 감사
                 </strong>
                 발행된 모든 견적서의 파이프라인 관리, 과거 견적서의 적용 단가 스냅샷 역추적 및 마진율 분석.
               </div>

@@ -70,7 +70,7 @@ export const PRESET_ORDER_ENTITIES: OrderEntity[] = [
     projectName: '판교 운중동 타운하우스 주방',
     consultDate: '2026-08-25',
     customerType: '인테리어 업체',
-    manager: '이현우',
+    manager: '안소연',
     layoutType: 'U_SHAPE',
     dimensions: {
       lowerCabinetLengthMm: 4200,
@@ -126,7 +126,7 @@ export const PRESET_ORDER_ENTITIES: OrderEntity[] = [
     projectName: '망원동 원룸 201호 주방 교체',
     consultDate: '2026-08-18',
     customerType: '빌더/시행사',
-    manager: '최민수',
+    manager: '안정빈',
     layoutType: 'I_SHAPE',
     dimensions: {
       lowerCabinetLengthMm: 2100,

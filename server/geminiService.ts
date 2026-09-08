@@ -60,6 +60,41 @@ function extractOrderEntityHeuristically(promptText: string): OrderEntity {
     deliveryDate = dateMatch[1].trim();
   }
 
+  // 4-1. Project Name (프로젝트명 / 현장명 / 공사명)
+  let projectName = '';
+  const projectMatch = text.match(/(?:프로젝트\s*명|프로젝트|현장\s*명|공사\s*명|공사\s*건명)\s*[:=]\s*([^\n]{2,40})/i);
+  if (projectMatch && projectMatch[1]) {
+    projectName = projectMatch[1].trim().replace(/[)\]】」』]+$/, '');
+  }
+
+  // 4-2. Consultation Date (상담일)
+  let consultDate = '';
+  const consultMatch = text.match(/(?:상담\s*일자?|문의\s*일자?|접수\s*일자?)\s*[:=]?\s*(\d{4}[-./]\d{1,2}[-./]\d{1,2})/i);
+  if (consultMatch && consultMatch[1]) {
+    consultDate = consultMatch[1].trim().replace(/[./]/g, '-');
+  }
+
+  // 4-3. Customer Type (고객 유형)
+  let customerType = '일반 고객';
+  if (/인테리어\s*업체|인테리어\s*실장|실장님|소장님|디자이너/i.test(text)) {
+    customerType = '인테리어 업체';
+  } else if (/재시공|재시공\s*고객|하자\s*재시공/i.test(text)) {
+    customerType = '재시공 고객';
+  } else if (/빌더|시행사|시공사|건설사/i.test(text)) {
+    customerType = '빌더/시행사';
+  }
+  const custTypeMatch = text.match(/(?:고객\s*유형|고객\s*구분|거래\s*유형)\s*[:=]\s*([^\n,]{2,20})/i);
+  if (custTypeMatch && custTypeMatch[1]) {
+    customerType = custTypeMatch[1].trim();
+  }
+
+  // 4-4. Manager (담당자)
+  let manager = '';
+  const managerMatch = text.match(/(?:담당자|담당\s*자|견적\s*담당|영업\s*담당|담당)\s*[:=]\s*([가-힣]{2,4})/i);
+  if (managerMatch && managerMatch[1]) {
+    manager = managerMatch[1].trim();
+  }
+
   // 5. Layout Type
   let layoutType: LayoutType = 'I_SHAPE';
   if (/11자|대면형|아일랜드형|병렬형|ISLAND/i.test(text)) {
@@ -270,6 +305,10 @@ function extractOrderEntityHeuristically(promptText: string): OrderEntity {
     contact,
     address,
     deliveryDate,
+    projectName,
+    consultDate,
+    customerType,
+    manager,
     layoutType,
     dimensions: {
       lowerCabinetLengthMm,
@@ -496,7 +535,12 @@ export async function parseCustomerOrder(
 6. 기기류(appliances):
    - 싱크볼(예: 백조 사각볼 860), 수전(거위목 니켈), 후드(하츠 침니), 쿡탑(3구 인덕션) 모델명 매칭
 7. 시공 조건(siteConditions):
-   - 층수, 엘리베이터 여부, 철거 필요 여부, 사다리차 필요 여부 판별`;
+   - 층수, 엘리베이터 여부, 철거 필요 여부, 사다리차 필요 여부 판별
+8. 상담 관리 정보:
+   - projectName: 프로젝트명/현장명/공사명 (예: "서초 래미안 주방 리모델링"). 언급이 없으면 고객명+지역으로 자연스럽게 생성하지 말고 빈 문자열("")로 두십시오.
+   - consultDate: 상담일/문의일 (YYYY-MM-DD). 없으면 "".
+   - customerType: '일반 고객' | '인테리어 업체' | '재시공 고객' | '빌더/시행사' 중 하나. 실장/소장/디자이너 언급 시 '인테리어 업체'.
+   - manager: 퀸 주방가구 측 견적 담당자 이름. 없으면 "".`;
 
   try {
     const parts: any[] = [];
@@ -526,6 +570,13 @@ export async function parseCustomerOrder(
             contact: { type: Type.STRING, description: '연락처' },
             address: { type: Type.STRING, description: '시공 현장 주소' },
             deliveryDate: { type: Type.STRING, description: '희망 시공/납기일자' },
+            projectName: { type: Type.STRING, description: '프로젝트명/현장명/공사명 (없으면 빈 문자열)' },
+            consultDate: { type: Type.STRING, description: '상담일 YYYY-MM-DD (없으면 빈 문자열)' },
+            customerType: {
+              type: Type.STRING,
+              description: "고객 유형: '일반 고객' | '인테리어 업체' | '재시공 고객' | '빌더/시행사'",
+            },
+            manager: { type: Type.STRING, description: '퀸 주방가구 측 견적 담당자명 (없으면 빈 문자열)' },
             layoutType: {
               type: Type.STRING,
               enum: ['I_SHAPE', 'L_SHAPE', 'U_SHAPE', 'ISLAND_PARALLEL', 'CUSTOM'],
