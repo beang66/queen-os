@@ -25,7 +25,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // ----------------------------------------------------
 // 1. HEALTH & METADATA
 // ----------------------------------------------------
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     system: '퀸 주방가구 견적 및 원가 자동화 시스템 (Queen Kitchen Furniture Automation)',
@@ -118,7 +118,7 @@ app.post('/api/pricing/bulk', (req, res) => {
   }
 });
 
-app.post('/api/pricing/reset-seed', (req, res) => {
+app.post('/api/pricing/reset-seed', (_req, res) => {
   try {
     const items = db.resetPricingCatalog();
     res.json({ success: true, message: '퀸 주방가구 표준 단가표 카탈로그로 초기화되었습니다.', count: items.length });
@@ -179,15 +179,12 @@ app.post('/api/gemini/parse-order', upload.single('image'), async (req, res) => 
 // ----------------------------------------------------
 app.post('/api/quote/calculate', (req, res) => {
   try {
-    const { orderEntity, targetMarginRate } = req.body;
+    const { orderEntity } = req.body;
     if (!orderEntity) {
       return res.status(400).json({ success: false, error: '주문 정보(orderEntity)가 필요합니다.' });
     }
 
-    const calculationResult = calculateDeterministicQuote(
-      orderEntity,
-      targetMarginRate ? Number(targetMarginRate) : 28
-    );
+    const calculationResult = calculateDeterministicQuote(orderEntity);
 
     res.json({ success: true, data: calculationResult });
   } catch (err: any) {
@@ -223,7 +220,10 @@ app.get('/api/quotes/:id', (req, res) => {
 
 app.post('/api/quotes', (req, res) => {
   try {
-    const { title, status, targetMarginRate, orderEntity, calculationResult, notes } = req.body;
+    const {
+      title, status, targetMarginRate, orderEntity, calculationResult, notes,
+      quoteNumber, version, parentQuoteId, publishMeta,
+    } = req.body;
     if (!orderEntity || !calculationResult) {
       return res.status(400).json({ success: false, error: '주문 정보와 계산 결과가 누락되었습니다.' });
     }
@@ -232,6 +232,10 @@ app.post('/api/quotes', (req, res) => {
       title: title || `${orderEntity.customerName} 고객님 주방가구 맞춤 견적서`,
       status: status || 'ISSUED',
       targetMarginRate: Number(targetMarginRate) || 28,
+      version: Number(version) || 1,
+      parentQuoteId: parentQuoteId || undefined,
+      publishMeta: publishMeta || undefined,
+      quoteNumber: quoteNumber || undefined,
       orderEntity,
       calculationResult,
       notes: notes || '',
@@ -345,7 +349,8 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    // SPA fallback: Express 5 removed bare '*' routes, so use a terminal middleware.
+    app.use((_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

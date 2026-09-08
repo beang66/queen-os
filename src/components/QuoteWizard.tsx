@@ -1,72 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { StepIndicator } from './wizard/StepIndicator';
+import { StepIndicator, WizardStep } from './wizard/StepIndicator';
 import { QuoteStep1Input } from './wizard/QuoteStep1Input';
+import { QuoteStep2Review } from './wizard/QuoteStep2Review';
 import { QuoteStep2Calc } from './wizard/QuoteStep2Calc';
 import { QuoteStep3Summary } from './wizard/QuoteStep3Summary';
-import { OrderEntity, QuoteCalculationResult, QuoteDocument } from '../types';
+import { OrderEntity, PricingItem, QuoteCalculationResult, QuoteDocument, QuotePublishMeta, ReviewLineItem } from '../types';
 import { SAMPLE_ORDER_PRESETS } from '../data/samplePresets';
+import { PRESET_ORDER_ENTITIES } from '../data/presetOrderEntities';
+import { AttachedFile, buildReviewItems } from './wizard/review/reviewModel';
+import { fetchJson } from '../lib/api';
 
-const DEFAULT_ORDER_ENTITY: OrderEntity = {
-  customerName: '박지은 고객님',
-  contact: '010-3829-1940',
-  address: '서울시 서초구 반포대로 120 래미안 104동 802호',
-  deliveryDate: '2026-09-20',
-  layoutType: 'I_SHAPE',
-  dimensions: {
-    lowerCabinetLengthMm: 3400,
-    upperCabinetLengthMm: 3400,
-    islandLengthMm: 0,
-    tallCabinetWidthMm: 0,
-    fridgeCabinetWidthMm: 1050,
-    depthMm: 600,
-    heightMm: 850,
-    countertopThicknessMm: 12,
-  },
-  doorOption: {
-    material: '한솔 E0 PET 무광 매트 화이트',
-    color: '매트 화이트',
-    handleType: 'C_CHANNEL',
-    edgeFinish: '1.2T 방수 PUR 엣지',
-  },
-  countertopOption: {
-    brand: 'LX 하이막스',
-    model: '오로라 비앙코 12T',
-    thickness: '12T',
-    edgeType: '사각 빗각 가공',
-  },
-  modules: {
-    drawerCount2Tier: 1,
-    drawerCount3Tier: 1,
-    sinkCabinetCount: 1,
-    cooktopCabinetCount: 1,
-    spiceRackCount: 1,
-    cornerModuleCount: 0,
-    riceCookerModuleCount: 0,
-  },
-  appliances: {
-    sinkBowlModel: '백조 그랜드 860 사각싱크볼',
-    faucetModel: '더죤테크 슈티에 거위목 수전 (니켈)',
-    hoodModel: '하츠 스퀘어 후드 900 (DTR-90S)',
-    cooktopModel: 'SK매직 3구 인덕션',
-  },
-  siteConditions: {
-    floor: 8,
-    hasElevator: true,
-    needsDemolition: true,
-    needsLadderTruck: false,
-    specialNotes: '8층 엘리베이터 진입 가능, 기존 싱크대 철거 폐기물 수거',
-  },
-  rawPrompt: SAMPLE_ORDER_PRESETS[0].rawText,
-};
+const DEFAULT_ORDER_ENTITY: OrderEntity = PRESET_ORDER_ENTITIES[0];
 
 interface QuoteWizardProps {
   initialOrderEntity?: OrderEntity | null;
+  /** 규격 검수 단계에서 품목-단가 DB 연결에 사용 */
+  pricingItems?: PricingItem[];
   onSaveQuote: (quote: {
     title: string;
     targetMarginRate: number;
     orderEntity: OrderEntity;
     calculationResult: QuoteCalculationResult;
     notes?: string;
+    quoteNumber?: string;
+    version?: number;
+    parentQuoteId?: string;
+    publishMeta?: QuotePublishMeta;
   }) => Promise<QuoteDocument>;
   onNavigateToHistory: () => void;
 }
@@ -76,29 +35,43 @@ interface QuoteWizardProps {
  */
 export const QuoteWizard: React.FC<QuoteWizardProps> = ({
   initialOrderEntity,
+  pricingItems = [],
   onSaveQuote,
   onNavigateToHistory,
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<WizardStep>(1);
 
   // Step 1 상태
   const [promptText, setPromptText] = useState<string>(
     initialOrderEntity?.rawPrompt || SAMPLE_ORDER_PRESETS[0].rawText
   );
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [aiParsingLoading, setAiParsingLoading] = useState<boolean>(false);
-  const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [extractionSuccessMsg, setExtractionSuccessMsg] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
 
   const [orderEntity, setOrderEntity] = useState<OrderEntity>(
     initialOrderEntity || DEFAULT_ORDER_ENTITY
   );
 
+  // 규격 검수용 주방 구성 품목 (1·2단계 공유)
+  const [reviewItems, setReviewItems] = useState<ReviewLineItem[]>(() =>
+    buildReviewItems(initialOrderEntity || DEFAULT_ORDER_ENTITY)
+  );
+
+  // 실제 주문 사례 프리셋 불러오기
+  const handleLoadPreset = (index: number) => {
+    const preset = PRESET_ORDER_ENTITIES[index];
+    if (!preset) return;
+    setOrderEntity(preset);
+    setReviewItems(buildReviewItems(preset));
+    setPromptText(SAMPLE_ORDER_PRESETS[index].rawText);
+  };
+
   // 외부 전달 엔티티 변경 동기화
   useEffect(() => {
     if (initialOrderEntity) {
       setOrderEntity(initialOrderEntity);
+      setReviewItems(buildReviewItems(initialOrderEntity));
       if (initialOrderEntity.rawPrompt) {
         setPromptText(initialOrderEntity.rawPrompt);
       }
@@ -108,58 +81,42 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
     }
   }, [initialOrderEntity]);
 
-  // Step 2 원가 계산 & 마진율 상태
+  // Step 3 원가 계산 & 마진율 상태
   const [targetMarginRate, setTargetMarginRate] = useState<number>(28);
   const [calculationResult, setCalculationResult] = useState<QuoteCalculationResult | null>(null);
   const [calcLoading, setCalcLoading] = useState<boolean>(false);
+  // 마지막 계산 이후 입력(주문 정보·품목)이 바뀌었는지 여부
+  const [calcDirty, setCalcDirty] = useState<boolean>(false);
 
-  // Step 3 최종 견적서 저장 상태
+  // Step 4 견적서 발행 상태
   const [quoteTitle, setQuoteTitle] = useState<string>('서초 래미안 34평형 주방가구 맞춤 제작 및 시공 견적서');
   const [savedQuote, setSavedQuote] = useState<QuoteDocument | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
-
-  // 이미지 드롭 & 파일 선택 핸들러
-  const handleImageSelect = (file: File) => {
-    setSelectedImage(file);
-    const reader = new FileReader();
-    reader.onload = () => setImagePreview(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleImageSelect(e.dataTransfer.files[0]);
-    }
-  };
+  // 발행된 버전 이력 (V1, V2, V3 ...) 및 발행 메타데이터
+  const [publishedVersions, setPublishedVersions] = useState<QuoteDocument[]>([]);
+  const [publishMeta, setPublishMeta] = useState<QuotePublishMeta>({
+    validUntilDays: 15,
+    paymentTerms: '계약금 30% / 제작 착수금 40% / 설치 완료 후 잔금 30%',
+    exclusions: '전기 증설, 배관 이설, 타일·도배 등 주방 외 공사는 별도입니다.',
+    specialTerms: '실측 후 치수 변경 시 견적 금액이 조정될 수 있습니다.',
+    internalMemo: '',
+    hiddenBreakdownIds: [],
+  });
 
   // AI 자연어 & 도면 파싱 요청 API
   const handleParseAiOrder = async () => {
     setAiParsingLoading(true);
     try {
-      const res = await fetch('/api/extract-order', {
+      const data = await fetchJson<{ data: OrderEntity }>('/api/gemini/parse-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: promptText }),
       });
-      const data = await res.json();
-      if (data.success && data.data) {
-        setOrderEntity(data.data);
-        setExtractionSuccessMsg('Gemini 3.7 AI 파싱에 성공하여 주문 엔티티가 자동 업데이트되었습니다.');
-      } else {
-        alert('AI 파싱 실패: ' + (data.error || '알 수 없는 오류'));
-      }
+      // 추출값을 기존 엔티티에 병합해 사용자가 이미 확인한 값이 지워지지 않도록 함
+      const merged: OrderEntity = { ...orderEntity, ...data.data };
+      setOrderEntity(merged);
+      setReviewItems(buildReviewItems(merged));
+      setExtractionSuccessMsg('AI 정보 추출이 완료되었습니다. 오른쪽에서 추출 결과를 검수하세요.');
     } catch (err: any) {
       alert(`AI 파싱 오류: ${err.message}`);
     } finally {
@@ -171,20 +128,13 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
   const handleCalculate = async () => {
     setCalcLoading(true);
     try {
-      const res = await fetch('/api/calculate-quote', {
+      const data = await fetchJson<{ data: QuoteCalculationResult }>('/api/quote/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderEntity,
-          targetMarginRate,
-        }),
+        body: JSON.stringify({ orderEntity }),
       });
-      const data = await res.json();
-      if (data.success && data.data) {
-        setCalculationResult(data.data);
-      } else {
-        alert('원가 계산 실패: ' + (data.error || '계산 오류'));
-      }
+      setCalculationResult(data.data);
+      setCalcDirty(false);
     } catch (err: any) {
       alert(`원가 산출 오류: ${err.message}`);
     } finally {
@@ -194,86 +144,151 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
 
   // 마진율 변경 시 실시간 원가 다시 계산
   useEffect(() => {
-    if (step === 2 || calculationResult) {
+    if (step === 3 || calculationResult) {
       handleCalculate();
     }
   }, [targetMarginRate]);
 
-  // 최종 견적서 저장 실행
+  // 계산 이후 주문 정보·품목이 바뀌면 "다시 계산" 안내를 위해 dirty 표시
+  useEffect(() => {
+    if (calculationResult) {
+      setCalcDirty(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderEntity, reviewItems]);
+
+  // 견적서 발행 실행 (V1) 및 새 버전 발행 (V2, V3 ...)
   const handleSaveFinalQuote = async () => {
     if (!calculationResult) return;
     setSaving(true);
     try {
+      const rootQuote = publishedVersions[0] ?? null;
+      const nextVersion = publishedVersions.length + 1;
+      const baseNumber = rootQuote
+        ? rootQuote.quoteNumber.replace(/-V\d+$/, '')
+        : undefined;
+
       const result = await onSaveQuote({
-        title: quoteTitle,
+        title: nextVersion > 1 ? `${quoteTitle} (V${nextVersion})` : quoteTitle,
         targetMarginRate,
         orderEntity,
         calculationResult,
+        notes: publishMeta.specialTerms,
+        version: nextVersion,
+        parentQuoteId: rootQuote?.id,
+        quoteNumber: baseNumber ? `${baseNumber}-V${nextVersion}` : undefined,
+        publishMeta,
       });
       setSavedQuote(result);
+      setPublishedVersions((prev) => [...prev, result]);
     } catch (err: any) {
-      alert(`견적서 저장 실패: ${err.message}`);
+      alert(`견적서 발행 실패: ${err.message}`);
     } finally {
       setSaving(false);
     }
   };
 
+  // 발행 완료 후 "새 버전으로 수정" — 기존 문서를 덮어쓰지 않고 편집 모드로 복귀
+  const handleStartNewVersion = () => {
+    setSavedQuote(null);
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* 3단계 진행 인디케이터 */}
+    <div className="w-full space-y-4">
+      {/* 4단계 진행 인디케이터: 자료 입력 → 규격 검수 → 원가 계산 → 견적서 발행 */}
       <StepIndicator currentStep={step} onSelectStep={(s) => setStep(s)} />
 
-      {/* Step 1: 입력 & AI 분석 */}
+      {extractionSuccessMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs">
+          {extractionSuccessMsg}
+        </div>
+      )}
+
+      {/* Step 1: 자료 입력 (도면·메모·사진 업로드, AI 정보 추출, 추출 결과 검수) */}
       {step === 1 && (
         <QuoteStep1Input
           orderEntity={orderEntity}
           setOrderEntity={setOrderEntity}
           promptText={promptText}
           setPromptText={setPromptText}
-          imagePreview={imagePreview}
+          attachedFiles={attachedFiles}
+          setAttachedFiles={setAttachedFiles}
+          reviewItems={reviewItems}
+          setReviewItems={setReviewItems}
+          pricingItems={pricingItems}
           aiParsingLoading={aiParsingLoading}
-          isDragOver={isDragOver}
-          extractionSuccessMsg={extractionSuccessMsg}
-          onImageSelect={handleImageSelect}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onLoadPreset={handleLoadPreset}
           onParseAiOrder={handleParseAiOrder}
+          onNextStep={() => setStep(2)}
+        />
+      )}
+
+      {/* Step 2: 규격 검수 (주문 정보 정밀 검토, 품목 확정, 단가 DB 연결) */}
+      {step === 2 && (
+        <QuoteStep2Review
+          orderEntity={orderEntity}
+          setOrderEntity={setOrderEntity}
+          items={reviewItems}
+          setItems={setReviewItems}
+          pricingItems={pricingItems}
+          promptText={promptText}
+          onPrevStep={() => setStep(1)}
           onNextStep={() => {
             handleCalculate();
-            setStep(2);
+            setStep(3);
           }}
         />
       )}
 
-      {/* Step 2: 실시간 원가 산출 및 마진 설정 */}
-      {step === 2 && (
+      {/* Step 3: 원가 계산 (품목별 단가 산출 및 마진율 시뮬레이션) */}
+      {step === 3 && (
         <QuoteStep2Calc
           orderEntity={orderEntity}
           targetMarginRate={targetMarginRate}
           setTargetMarginRate={setTargetMarginRate}
           calculationResult={calculationResult}
           calcLoading={calcLoading}
+          calcDirty={calcDirty}
           onCalculate={handleCalculate}
-          onPrevStep={() => setStep(1)}
-          onNextStep={() => setStep(3)}
+          onPrevStep={() => setStep(2)}
+          onNextStep={() => setStep(4)}
         />
       )}
 
-      {/* Step 3: 완성된 견적서 양식 및 저장 */}
-      {step === 3 && calculationResult && (
-        <QuoteStep3Summary
-          orderEntity={orderEntity}
-          targetMarginRate={targetMarginRate}
-          calculationResult={calculationResult}
-          quoteTitle={quoteTitle}
-          setQuoteTitle={setQuoteTitle}
-          savedQuote={savedQuote}
-          saving={saving}
-          onSaveQuote={handleSaveFinalQuote}
-          onPrevStep={() => setStep(2)}
-          onNavigateToHistory={onNavigateToHistory}
-        />
+      {/* Step 4: 견적서 발행 (최종 견적 문서 생성·저장·내보내기) */}
+      {step === 4 && (
+        calculationResult ? (
+          <QuoteStep3Summary
+            orderEntity={orderEntity}
+            calculationResult={calculationResult}
+            targetMarginRate={targetMarginRate}
+            quoteTitle={quoteTitle}
+            setQuoteTitle={setQuoteTitle}
+            publishMeta={publishMeta}
+            setPublishMeta={setPublishMeta}
+            savedQuote={savedQuote}
+            publishedVersions={publishedVersions}
+            saving={saving}
+            onSaveQuote={handleSaveFinalQuote}
+            onStartNewVersion={handleStartNewVersion}
+            onPrevStep={() => setStep(3)}
+            onNavigateToHistory={onNavigateToHistory}
+          />
+        ) : (
+          <div className="bg-white rounded-xl p-8 text-center border border-gray-200">
+            <p className="text-sm text-gray-500 mb-3">견적서 계산 결과가 아직 생성되지 않았습니다.</p>
+            <button
+              type="button"
+              onClick={() => {
+                handleCalculate();
+                setStep(3);
+              }}
+              className="bg-blue-600 text-white text-xs font-semibold px-4 py-2 rounded-lg"
+            >
+              원가 계산으로 이동
+            </button>
+          </div>
+        )
       )}
     </div>
   );

@@ -3,14 +3,12 @@ import {
   Calculator,
   Database,
   History,
-  Layers,
-  Sparkles,
   Layers as SchemaIcon,
 } from 'lucide-react';
 
 interface HeaderProps {
-  activeTab: 'wizard' | 'extract' | 'pricing' | 'history' | 'architecture';
-  setActiveTab: (tab: 'wizard' | 'extract' | 'pricing' | 'history' | 'architecture') => void;
+  activeTab: 'wizard' | 'pricing' | 'history' | 'architecture';
+  setActiveTab: (tab: 'wizard' | 'pricing' | 'history' | 'architecture') => void;
   pricingCount: number;
   quotesCount: number;
 }
@@ -91,18 +89,6 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('pricing')}
-            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap uppercase tracking-wider ${
-              activeTab === 'pricing'
-                ? 'border-blue-500 text-white bg-gray-800/90 shadow-inner'
-                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 text-green-400" />
-            <span>2. Pricing DB (단가표 관리)</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab('history')}
             className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap uppercase tracking-wider ${
               activeTab === 'history'
@@ -111,7 +97,19 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <History className="w-3.5 h-3.5 text-purple-400" />
-            <span>3. Audit & History (견적 이력 감사)</span>
+            <span>2. Audit & History (견적 이력 감사)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pricing')}
+            className={`flex items-center gap-2 py-2 px-3.5 rounded-t font-semibold text-xs border-b-2 transition whitespace-nowrap uppercase tracking-wider ${
+              activeTab === 'pricing'
+                ? 'border-blue-500 text-white bg-gray-800/90 shadow-inner'
+                : 'border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-green-400" />
+            <span>3. Pricing DB (단가표 관리)</span>
           </button>
         </div>
       </div>

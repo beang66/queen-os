@@ -5,14 +5,10 @@ import {
   Database,
   Calculator,
   ShieldCheck,
-  CheckCircle2,
-  ArrowRight,
-  ArrowDown,
+  Lock as LockIcon,
   Layers,
   Cpu,
-  Lock,
   Workflow,
-  Search,
 } from 'lucide-react';
 
 export const SystemDiagram: React.FC = () => {
@@ -144,7 +140,7 @@ export const SystemDiagram: React.FC = () => {
                 <span className="text-[9px] font-mono font-bold bg-orange-100 text-orange-800 px-1.5 py-0.2 rounded uppercase">Audit Trail</span>
               </div>
               <h4 className="font-bold text-xs text-gray-900 mb-1 flex items-center gap-1">
-                <Lock className="w-3.5 h-3.5 text-orange-600" />
+                <LockIcon className="w-3.5 h-3.5 text-orange-600" />
                 저장 & 단가 스냅샷
               </h4>
               <p className="text-[11px] text-gray-600 leading-normal">

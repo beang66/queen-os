@@ -4,28 +4,37 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --open",
-    "start": "vite --open",
+    "dev": "tsx watch --ignore \"**/*.timestamp-*.mjs\" --ignore \"data/**\" --ignore \"dist/**\" --ignore \"graphify-out/**\" server.ts",
+    "dev:web": "vite",
     "build": "vite build",
+    "start": "tsx server.ts",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^2.21.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^13.5.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "lucide-react": "^0.475.0",
+    "multer": "^2.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
     "@types/node": "^20.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.23.13",
     "typescript": "^5.3.3",
     "vite": "^5.4.14"
   },

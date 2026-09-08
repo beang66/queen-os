@@ -1,11 +1,10 @@
 import React from 'react';
-import { Database, CheckCircle2, FileSpreadsheet } from 'lucide-react';
+import { Database, FileSpreadsheet } from 'lucide-react';
 import { ParsedPriceItem } from '../../types';
 
 interface ExtractedPricingTableProps {
   items: ParsedPriceItem[];
   onApplyToPricingDb: (items: ParsedPriceItem[]) => void;
-  onNavigateToDb: () => void;
 }
 
 /**
@@ -14,7 +13,6 @@ interface ExtractedPricingTableProps {
 export const ExtractedPricingTable: React.FC<ExtractedPricingTableProps> = ({
   items,
   onApplyToPricingDb,
-  onNavigateToDb,
 }) => {
   if (items.length === 0) return null;
 

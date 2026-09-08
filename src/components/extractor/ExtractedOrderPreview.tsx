@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Building2, Layers, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, Building2 } from 'lucide-react';
 import { OrderEntity } from '../../types';
 
 interface ExtractedOrderPreviewProps {

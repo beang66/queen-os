@@ -24,7 +24,7 @@ function getAiClient(): GoogleGenAI {
 // ---------------------------------------------------------------------------
 // Robust Heuristic Parser for Order Entity (NLP / Regex rule engine)
 // ---------------------------------------------------------------------------
-export function extractOrderEntityHeuristically(promptText: string): OrderEntity {
+function extractOrderEntityHeuristically(promptText: string): OrderEntity {
   const text = promptText || '';
 
   // 1. Customer Name

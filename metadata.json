@@ -1,7 +1,0 @@
-{
-  "name": "퀸 주방가구 견적 및 원가 자동화 시스템",
-  "description": "멀티모달 AI 비정형 문서 파싱, 단가표 DB 관리, 주문 엔티티 추출, 결정론적 견적 원가 계산 및 이력 관리 시스템",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
-

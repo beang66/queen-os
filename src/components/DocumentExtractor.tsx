@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { DocumentUploadArea } from './extractor/DocumentUploadArea';
 import { ExtractedPricingTable } from './extractor/ExtractedPricingTable';
 import { ExtractedOrderPreview } from './extractor/ExtractedOrderPreview';
-import { ParsedPriceItem, OrderEntity } from '../types';
+import { ParsedPriceItem, OrderEntity, DocumentExtractionResponse } from '../types';
+import { fetchJson } from '../lib/api';
 
 const SAMPLE_PARSED_ORDER_ENTITY: OrderEntity = {
   customerName: '박지은 고객님',
@@ -58,7 +59,6 @@ const SAMPLE_PARSED_ORDER_ENTITY: OrderEntity = {
 
 interface DocumentExtractorProps {
   onApplyToPricingDb: (items: ParsedPriceItem[]) => Promise<void>;
-  onNavigateToDb: () => void;
   onTransferToQuote: (order: OrderEntity) => void;
 }
 
@@ -67,7 +67,6 @@ interface DocumentExtractorProps {
  */
 export const DocumentExtractor: React.FC<DocumentExtractorProps> = ({
   onApplyToPricingDb,
-  onNavigateToDb,
   onTransferToQuote,
 }) => {
   const [analyzing, setAnalyzing] = useState<boolean>(false);
@@ -78,24 +77,19 @@ export const DocumentExtractor: React.FC<DocumentExtractorProps> = ({
   const handleFileUpload = async (file: File) => {
     setAnalyzing(true);
     try {
+      // 서버(server.ts)의 upload.single('file') 과 필드명을 맞춰야 합니다.
       const formData = new FormData();
-      formData.append('document', file);
+      formData.append('file', file);
 
-      const res = await fetch('/api/parse-document', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (data.success) {
-        if (data.type === 'PRICING_TABLE') {
-          setExtractedPricingItems(data.items || []);
-          setExtractedOrderEntity(null);
-        } else if (data.type === 'ORDER_ENTITY') {
-          setExtractedOrderEntity(data.orderEntity || null);
-          setExtractedPricingItems([]);
-        }
-      } else {
-        alert('문서 파싱 실패: ' + (data.error || '알 수 없는 오류'));
+      const res = await fetchJson<{ data: DocumentExtractionResponse }>(
+        '/api/gemini/parse-doc',
+        { method: 'POST', body: formData }
+      );
+      const extraction = res.data;
+      setExtractedPricingItems(extraction.extractedItems || []);
+      setExtractedOrderEntity(null);
+      if (extraction.warnings?.length) {
+        console.warn('문서 파싱 경고:', extraction.warnings);
       }
     } catch (err: any) {
       alert(`업로드 오류: ${err.message}`);
@@ -166,7 +160,6 @@ export const DocumentExtractor: React.FC<DocumentExtractorProps> = ({
       <ExtractedPricingTable
         items={extractedPricingItems}
         onApplyToPricingDb={onApplyToPricingDb}
-        onNavigateToDb={onNavigateToDb}
       />
 
       {/* 3. 파싱된 주방 주문서 엔티티 프리뷰 & 마법사 전송 */}

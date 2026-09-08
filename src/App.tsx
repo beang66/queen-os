@@ -1,21 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { QuoteWizard } from './components/QuoteWizard';
 import { PricingDbManager } from './components/PricingDbManager';
 import { QuoteHistoryAudit } from './components/QuoteHistoryAudit';
 import { SystemDiagram } from './components/SystemDiagram';
 import { ToastNotification } from './components/common/ToastNotification';
-import { OrderEntity, ParsedPriceItem, PricingItem, QuoteDocument, QuoteStatus } from './types';
+import { ParsedPriceItem, PricingItem, QuoteDocument, QuoteStatus } from './types';
+import { fetchJson } from './lib/api';
 
 /**
  * 퀸 주방가구 스마트 견적 & 원가 자동화 시스템 (Queen-OS) 메인 앱 컴포넌트
  */
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'wizard' | 'extract' | 'pricing' | 'history' | 'architecture'>('wizard');
-  const [draftOrderEntity, setDraftOrderEntity] = useState<OrderEntity | null>(null);
+  const [activeTab, setActiveTab] = useState<'wizard' | 'pricing' | 'history' | 'architecture'>('wizard');
   const [pricingItems, setPricingItems] = useState<PricingItem[]>([]);
   const [quotes, setQuotes] = useState<QuoteDocument[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -28,11 +27,8 @@ export default function App() {
   // 단가표 DB 데이터 조회 API
   const fetchPricingItems = async () => {
     try {
-      const res = await fetch('/api/pricing');
-      const data = await res.json();
-      if (data.success) {
-        setPricingItems(data.data);
-      }
+      const data = await fetchJson('/api/pricing');
+      setPricingItems(data.data);
     } catch (err) {
       console.error('Failed to fetch pricing items:', err);
     }
@@ -41,11 +37,8 @@ export default function App() {
   // 발행된 견적서 이력 조회 API
   const fetchQuotes = async () => {
     try {
-      const res = await fetch('/api/quotes');
-      const data = await res.json();
-      if (data.success) {
-        setQuotes(data.data);
-      }
+      const data = await fetchJson('/api/quotes');
+      setQuotes(data.data);
     } catch (err) {
       console.error('Failed to fetch quotes:', err);
     }
@@ -53,9 +46,7 @@ export default function App() {
 
   useEffect(() => {
     const init = async () => {
-      setLoading(true);
       await Promise.all([fetchPricingItems(), fetchQuotes()]);
-      setLoading(false);
     };
     init();
   }, []);
@@ -63,18 +54,13 @@ export default function App() {
   // 단가 품목 신규 등록
   const handleAddPricingItem = async (item: Omit<PricingItem, 'id' | 'updatedAt'>) => {
     try {
-      const res = await fetch('/api/pricing', {
+      await fetchJson('/api/pricing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item),
       });
-      const data = await res.json();
-      if (data.success) {
-        await fetchPricingItems();
-        showToast(`'${item.name}' 품목이 단가표에 등록되었습니다.`);
-      } else {
-        alert(data.error || '등록 실패');
-      }
+      await fetchPricingItems();
+      showToast(`'${item.name}' 품목이 단가표에 등록되었습니다.`);
     } catch (err: any) {
       alert(`단가 등록 오류: ${err.message}`);
     }
@@ -83,18 +69,13 @@ export default function App() {
   // 단가 품목 수정
   const handleUpdatePricingItem = async (id: string, updates: Partial<PricingItem>) => {
     try {
-      const res = await fetch(`/api/pricing/${id}`, {
+      await fetchJson(`/api/pricing/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
-      const data = await res.json();
-      if (data.success) {
-        await fetchPricingItems();
-        showToast('단가 정보가 성공적으로 수정되었습니다.');
-      } else {
-        alert(data.error || '수정 실패');
-      }
+      await fetchPricingItems();
+      showToast('단가 정보가 성공적으로 수정되었습니다.');
     } catch (err: any) {
       alert(`단가 수정 오류: ${err.message}`);
     }
@@ -103,14 +84,9 @@ export default function App() {
   // 단가 품목 삭제
   const handleDeletePricingItem = async (id: string) => {
     try {
-      const res = await fetch(`/api/pricing/${id}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (data.success) {
-        await fetchPricingItems();
-        showToast('단가 품목이 삭제되었습니다.');
-      }
+      await fetchJson(`/api/pricing/${id}`, { method: 'DELETE' });
+      await fetchPricingItems();
+      showToast('단가 품목이 삭제되었습니다.');
     } catch (err: any) {
       alert(`삭제 오류: ${err.message}`);
     }
@@ -133,18 +109,13 @@ export default function App() {
         notes: 'AI 문서 파싱 일괄 등록',
       }));
 
-      const res = await fetch('/api/pricing/bulk', {
+      await fetchJson('/api/pricing/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: formattedItems }),
       });
-      const data = await res.json();
-      if (data.success) {
-        await fetchPricingItems();
-        showToast(`총 ${items.length}개 품목이 단가표 DB에 성공적으로 적재되었습니다.`);
-      } else {
-        alert(data.error || '일괄 저장 실패');
-      }
+      await fetchPricingItems();
+      showToast(`총 ${items.length}개 품목이 단가표 DB에 성공적으로 적재되었습니다.`);
     } catch (err: any) {
       alert(`일괄 저장 오류: ${err.message}`);
     }
@@ -154,12 +125,9 @@ export default function App() {
   const handleResetSeed = async () => {
     if (!confirm('퀸 주방가구 표준 단가표 카탈로그(기본 품목)로 초기화하시겠습니까?')) return;
     try {
-      const res = await fetch('/api/pricing/reset-seed', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        await fetchPricingItems();
-        showToast('퀸 주방가구 표준 단가표 카탈로그로 초기화되었습니다.');
-      }
+      await fetchJson('/api/pricing/reset-seed', { method: 'POST' });
+      await fetchPricingItems();
+      showToast('퀸 주방가구 표준 단가표 카탈로그로 초기화되었습니다.');
     } catch (err: any) {
       alert(`초기화 오류: ${err.message}`);
     }
@@ -172,35 +140,31 @@ export default function App() {
     orderEntity: any;
     calculationResult: any;
     notes?: string;
+    quoteNumber?: string;
+    version?: number;
+    parentQuoteId?: string;
+    publishMeta?: any;
   }): Promise<QuoteDocument> => {
-    const res = await fetch('/api/quotes', {
+    const data = await fetchJson<{ data: QuoteDocument }>('/api/quotes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (data.success && data.data) {
-      await fetchQuotes();
-      showToast(`견적서 #${data.data.quoteNumber}가 영구 저장되었습니다.`);
-      return data.data;
-    } else {
-      throw new Error(data.error || '견적서 저장 실패');
-    }
+    await fetchQuotes();
+    showToast(`견적서 #${data.data.quoteNumber}가 발행/저장되었습니다.`);
+    return data.data;
   };
 
   // 견적서 이력 상태 변경
   const handleUpdateQuoteStatus = async (id: string, status: QuoteStatus) => {
     try {
-      const res = await fetch(`/api/quotes/${id}`, {
+      await fetchJson(`/api/quotes/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-      const data = await res.json();
-      if (data.success) {
-        await fetchQuotes();
-        showToast('견적 진행 상태가 업데이트되었습니다.');
-      }
+      await fetchQuotes();
+      showToast('견적 진행 상태가 업데이트되었습니다.');
     } catch (err: any) {
       alert(`상태 변경 오류: ${err.message}`);
     }
@@ -209,12 +173,9 @@ export default function App() {
   // 견적서 삭제
   const handleDeleteQuote = async (id: string) => {
     try {
-      const res = await fetch(`/api/quotes/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        await fetchQuotes();
-        showToast('견적서가 삭제되었습니다.');
-      }
+      await fetchJson(`/api/quotes/${id}`, { method: 'DELETE' });
+      await fetchQuotes();
+      showToast('견적서가 삭제되었습니다.');
     } catch (err: any) {
       alert(`견적서 삭제 오류: ${err.message}`);
     }
@@ -237,7 +198,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 lg:px-6 py-4">
         {activeTab === 'wizard' && (
           <QuoteWizard
-            initialOrderEntity={draftOrderEntity}
+            pricingItems={pricingItems}
             onSaveQuote={handleSaveQuote}
             onNavigateToHistory={() => setActiveTab('history')}
           />
@@ -246,7 +207,6 @@ export default function App() {
         {activeTab === 'pricing' && (
           <PricingDbManager
             items={pricingItems}
-            onRefresh={fetchPricingItems}
             onAddItem={handleAddPricingItem}
             onUpdateItem={handleUpdatePricingItem}
             onDeleteItem={handleDeletePricingItem}

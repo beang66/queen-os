@@ -8,7 +8,6 @@ import { X, Sparkles } from 'lucide-react';
 
 interface PricingDbManagerProps {
   items: PricingItem[];
-  onRefresh: () => Promise<void>;
   onAddItem: (item: Omit<PricingItem, 'id' | 'updatedAt'>) => Promise<void>;
   onUpdateItem: (id: string, updates: Partial<PricingItem>) => Promise<void>;
   onDeleteItem: (id: string) => Promise<void>;
@@ -21,7 +20,6 @@ interface PricingDbManagerProps {
  */
 export const PricingDbManager: React.FC<PricingDbManagerProps> = ({
   items,
-  onRefresh,
   onAddItem,
   onUpdateItem,
   onDeleteItem,
@@ -133,7 +131,6 @@ export const PricingDbManager: React.FC<PricingDbManagerProps> = ({
                   }
                   setIsExtractorModalOpen(false);
                 }}
-                onNavigateToDb={() => setIsExtractorModalOpen(false)}
                 onTransferToQuote={() => {
                   setIsExtractorModalOpen(false);
                   alert('발주서 추출 데이터는 [1. Quote Engine] 마법사 탭에서 사용해주세요.');

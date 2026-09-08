@@ -29,7 +29,11 @@ export interface OrderEntity {
   customerName: string;
   contact: string;
   address: string;
-  deliveryDate?: string;
+  deliveryDate?: string;         // 희망 시공일
+  projectName?: string;          // 프로젝트명 (예: 서초 래미안 주방 리모델링)
+  consultDate?: string;          // 상담일
+  customerType?: string;         // 고객 유형 (일반 고객 / 인테리어 업체 / 재시공 등)
+  manager?: string;              // 담당자
   layoutType: LayoutType;
   dimensions: {
     lowerCabinetLengthMm: number;    // 하부장 길이 (mm)
@@ -78,6 +82,21 @@ export interface OrderEntity {
     specialNotes?: string;           // 특이사항
   };
   rawPrompt?: string;                // 원본 고객 요청 텍스트/메모
+}
+
+/** 규격 검수 단계의 주방 구성 품목 라인 아이템 */
+export type ReviewItemStatus = 'CONFIRMED' | 'NEEDS_PRICING' | 'MANUAL';
+
+export interface ReviewLineItem {
+  id: string;
+  category: ItemCategory;
+  name: string;                  // 품목
+  spec: string;                  // 규격 / 산출 기준
+  quantity: number;              // 수량
+  unit: string;                  // 단위
+  status: ReviewItemStatus;      // 확인됨 / 단가 연결 필요 / 직접 입력
+  linkedPricingId?: string | null; // 연결된 단가 DB 품목 id
+  source: 'AI' | 'MANUAL';       // AI 추출 / 직접 입력
 }
 
 export interface QuoteBreakdownItem {
@@ -139,6 +158,16 @@ export interface QuoteCalculationResult {
 
 export type QuoteStatus = 'DRAFT' | 'ISSUED' | 'NEGOTIATING' | 'CONFIRMED' | 'IN_PRODUCTION' | 'COMPLETED' | 'CANCELLED';
 
+/** 견적서 발행 단계에서 편집하는 문서 메타데이터 */
+export interface QuotePublishMeta {
+  validUntilDays: number;         // 유효기간 (발행일로부터 N일)
+  paymentTerms: string;           // 결제 조건
+  exclusions: string;             // 제외 사항
+  specialTerms: string;           // 특약 사항
+  internalMemo: string;           // 내부 메모 (고객 견적서에 노출되지 않음)
+  hiddenBreakdownIds: string[];   // 고객 견적서에서 숨길 품목 id 목록
+}
+
 export interface QuoteDocument {
   id: string;
   quoteNumber: string;               // 견적번호 (예: QN-20260831-001)
@@ -147,6 +176,9 @@ export interface QuoteDocument {
   updatedAt: string;
   status: QuoteStatus;
   targetMarginRate: number;          // 적용 목표 마진율 (%)
+  version?: number;                  // 발행 버전 (V1, V2, V3 ...)
+  parentQuoteId?: string;            // 최초 버전 문서 id (버전 체인)
+  publishMeta?: QuotePublishMeta;    // 발행 메타데이터
   orderEntity: OrderEntity;
   calculationResult: QuoteCalculationResult;
   appliedPricingSnapshot?: PricingItem[];
