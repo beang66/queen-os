@@ -5,6 +5,8 @@
  * 본문이 비어 있어 "Unexpected end of JSON input" 같은 원인을 알 수 없는 오류가 납니다.
  * 여기서 응답을 먼저 텍스트로 읽고 상황별로 조치 방법까지 담은 메시지를 던집니다.
  */
+import type { ZodType } from 'zod';
+import { z } from 'zod';
 
 const HOW_TO_RUN =
   "터미널에서 'npm run dev' 를 실행한 뒤 http://localhost:3000 으로 접속하세요.";
@@ -76,4 +78,35 @@ export async function fetchJson<T = any>(url: string, init?: RequestInit): Promi
   }
 
   return data as T;
+}
+
+/**
+ * 서버가 실제로 약속한 모양을 돌려줬는지 확인한 뒤 반환합니다.
+ *
+ * `fetchJson<{ data: QuoteDraft }>` 의 제네릭은 타입 주장일 뿐이라, 서버가 다른
+ * 모양을 보내도 컴파일과 실행 모두 통과합니다. 그 어긋남은 화면 어딘가에서
+ * `undefined` 로 뒤늦게 터집니다. 여기서는 응답이 스키마와 다르면 그 자리에서,
+ * 어떤 필드가 왜 다른지 밝히며 실패합니다.
+ */
+export async function fetchValidated<T extends ZodType>(
+  schema: T,
+  url: string,
+  init?: RequestInit
+): Promise<z.infer<T>> {
+  const raw = await fetchJson<unknown>(url, init);
+  const result = schema.safeParse(raw);
+
+  if (!result.success) {
+    const details = result.error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join('.') || '(응답)'}: ${issue.message}`)
+      .join(' / ');
+    throw new ApiError(
+      `서버 응답이 예상한 형식과 다릅니다: ${url}\n${details}`,
+      200,
+      raw
+    );
+  }
+
+  return result.data;
 }

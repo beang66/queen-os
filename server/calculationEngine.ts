@@ -12,8 +12,8 @@ import { db } from './db.js';
  * 단가표 DB의 출고가를 기준으로 견적 원가·공급가를 결정론적으로 산출합니다.
  * 목표 마진율은 이 엔진이 아니라 원가 계산 화면에서 산출 결과 위에 적용합니다.
  */
-export function calculateDeterministicQuote(order: OrderEntity): QuoteCalculationResult {
-  const allPricing = db.getPricingItems();
+export async function calculateDeterministicQuote(order: OrderEntity): Promise<QuoteCalculationResult> {
+  const allPricing = await db.getPricingItems();
   const pricingMap = new Map<string, PricingItem>();
   allPricing.forEach((item) => {
     pricingMap.set(item.code, item);

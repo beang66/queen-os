@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DraftPayload, QuoteDraft } from '../types';
-import { ApiError, NetworkError, fetchJson } from '../lib/api';
+import { ApiError, NetworkError, fetchValidated } from '../lib/api';
+import { DraftResponse } from '../schemas';
 
 /** 저장 상태 — 화면 우측 상단 뱃지에 그대로 표시된다. */
 export type SaveState = 'IDLE' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR' | 'CONFLICT';
@@ -151,7 +152,7 @@ export function useQuoteDraft(): UseQuoteDraftResult {
       setErrorMessage(null);
 
       try {
-        const res = await fetchJson<{ data: QuoteDraft }>(`/api/drafts/${id}`, {
+        const res = await fetchValidated(DraftResponse, `/api/drafts/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -203,7 +204,7 @@ export function useQuoteDraft(): UseQuoteDraftResult {
     async (payload: DraftPayload): Promise<QuoteDraft | null> => {
       setSaveState('SAVING');
       try {
-        const res = await fetchJson<{ data: QuoteDraft }>('/api/drafts', {
+        const res = await fetchValidated(DraftResponse, '/api/drafts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ payload, editorId: editorIdRef.current }),
@@ -224,9 +225,7 @@ export function useQuoteDraft(): UseQuoteDraftResult {
   const loadDraft = useCallback(
     async (id: string): Promise<QuoteDraft | null> => {
       try {
-        const res = await fetchJson<{ data: QuoteDraft; meta: { pricingChanged: boolean } }>(
-          `/api/drafts/${id}`
-        );
+        const res = await fetchValidated(DraftResponse, `/api/drafts/${id}`);
         applyDraft(res.data);
         setSaveState('SAVED');
         setConflictDraft(null);

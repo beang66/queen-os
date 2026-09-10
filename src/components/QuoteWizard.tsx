@@ -19,7 +19,8 @@ import {
 import { SAMPLE_ORDER_PRESETS } from '../data/samplePresets';
 import { PRESET_ORDER_ENTITIES } from '../data/presetOrderEntities';
 import { AttachedFile, buildReviewItems } from './wizard/review/reviewModel';
-import { fetchJson } from '../lib/api';
+import { fetchValidated } from '../lib/api';
+import { CalculationResponse, DraftListResponse, OrderEntityResponse } from '../schemas';
 import { getActiveDraftId, useQuoteDraft } from '../hooks/useQuoteDraft';
 
 const DEFAULT_ORDER_ENTITY: OrderEntity = PRESET_ORDER_ENTITIES[0];
@@ -203,7 +204,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
 
       // 진행 중인 다른 초안이 있으면 안내한다.
       try {
-        const list = await fetchJson<{ data: QuoteDraftSummary[] }>('/api/drafts?status=ACTIVE');
+        const list = await fetchValidated(DraftListResponse, '/api/drafts?status=ACTIVE');
         if (!cancelled) setOtherDrafts(list.data.slice(0, 5));
       } catch {
         /* 목록 조회 실패는 치명적이지 않으므로 무시 */
@@ -269,7 +270,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
   const handleParseAiOrder = async () => {
     setAiParsingLoading(true);
     try {
-      const data = await fetchJson<{ data: OrderEntity }>('/api/gemini/parse-order', {
+      const data = await fetchValidated(OrderEntityResponse, '/api/gemini/parse-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: promptText }),
@@ -291,7 +292,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
   const handleCalculate = async () => {
     setCalcLoading(true);
     try {
-      const data = await fetchJson<{ data: QuoteCalculationResult }>('/api/quote/calculate', {
+      const data = await fetchValidated(CalculationResponse, '/api/quote/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderEntity }),

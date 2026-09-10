@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Archive, FileClock, History, Loader2, PlayCircle, RefreshCw, Trash2, Undo2 } from 'lucide-react';
 import { DraftStatus, QuoteDraft, QuoteDraftSummary } from '../../types';
-import { fetchJson } from '../../lib/api';
+import { fetchJson, fetchValidated } from '../../lib/api';
+import { DraftListResponse, DraftResponse } from '../../schemas';
 
 interface DraftListPanelProps {
   onResumeDraft: (id: string) => void;
@@ -47,7 +48,7 @@ export const DraftListPanel: React.FC<DraftListPanelProps> = ({ onResumeDraft })
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchJson<{ data: QuoteDraftSummary[] }>(`/api/drafts?status=${filter}`);
+      const res = await fetchValidated(DraftListResponse, `/api/drafts?status=${filter}`);
       setDrafts(res.data);
     } catch (err: any) {
       setError(err.message);
@@ -78,7 +79,7 @@ export const DraftListPanel: React.FC<DraftListPanelProps> = ({ onResumeDraft })
     }
     setHistoryLoadingId(id);
     try {
-      const res = await fetchJson<{ data: QuoteDraft }>(`/api/drafts/${id}`);
+      const res = await fetchValidated(DraftResponse, `/api/drafts/${id}`);
       setHistoryOf(res.data);
     } catch (err: any) {
       alert(`변경 이력 조회 오류: ${err.message}`);

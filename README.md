@@ -52,10 +52,16 @@ src/
     QuoteWizard.tsx           4단계 마법사 컨테이너
     wizard/                   단계별 화면 + review·calc 하위 모듈
     pricing/ · history/       단가표 DB · 견적 이력
+  schemas.ts                  API 입출력 검증 스키마 (zod) — 서버·클라이언트 공용
+  lib/api.ts                  fetch 래퍼 + 응답 스키마 검증
 server/
   calculationEngine.ts        결정론적 원가 산출
-  db.ts                       JSON 파일 기반 저장소 (data/db.json)
+  db.ts                       Prisma/SQLite 저장소 (data/queen-os.db)
+  validate.ts                 요청 본문·쿼리 검증 헬퍼
   geminiService.ts            AI 문서·자연어 파싱
+prisma/
+  schema.prisma                PricingItem / Quote / Draft / QuoteDraftRevision
+  migrations/                  스키마 변경 이력 (git 추적됨)
 ```
 
 ## 견적 초안 (자동 저장)
@@ -76,6 +82,49 @@ server/
 견적서를 발행하면 초안은 `PUBLISHED` 로 바뀌고 발행 문서와 연결됩니다.
 초안 목록과 복구는 **견적 관리** 탭 상단에서 다룹니다.
 
+## API 계약 (zod)
+
+요청과 응답이 [src/schemas.ts](src/schemas.ts) 한 곳에 정의되어 있고, 서버와 클라이언트가
+같은 스키마를 씁니다.
+
+- **서버** — 라우트가 요청 본문을 검증하고, 틀리면 400 과 함께 어느 필드가 왜 틀렸는지 알려줍니다.
+  `요청 값이 올바르지 않습니다. orderEntity.dimensions.lowerCabinetLengthMm: expected number, received string`
+- **클라이언트** — `fetchValidated(스키마, url)` 로 호출해 응답이 약속한 모양인지 확인합니다.
+  기존 `fetchJson<{ data: QuoteDraft }>` 의 제네릭은 타입 주장일 뿐이라 서버가 다른 모양을
+  보내도 통과했고, 그 어긋남은 화면 어딘가에서 `undefined` 로 뒤늦게 드러났습니다.
+- **드리프트 방지** — `schemas.ts` 하단에서 각 스키마의 추론 타입이 [src/types.ts](src/types.ts) 의
+  도메인 타입에 대입 가능한지 컴파일 시점에 확인합니다. 한쪽만 고치면 `tsc` 가 막습니다.
+
+이 검증이 성립하려면 `strictNullChecks` 가 필요해 [tsconfig.json](tsconfig.json) 에서 켰습니다
+(켠 시점에 기존 오류 0건).
+
 ## 데이터 저장
 
-`data/db.json` 단일 파일에 단가표·견적서·견적 초안을 보관합니다(`server/db.ts`의 `Store`). 발행된 견적서는 덮어쓰지 않고 `-V2`, `-V3` 번호로 새 문서를 만듭니다.
+**Prisma + SQLite** (`data/queen-os.db`)에 단가표·견적서·견적 초안을 보관합니다.
+발행된 견적서는 덮어쓰지 않고 `-V2`, `-V3` 번호로 새 문서를 만듭니다.
+
+```bash
+npm run db:migrate          # 스키마 변경 후 마이그레이션 생성·적용 (개발)
+npm run db:migrate:deploy   # 운영 서버에 마이그레이션 적용
+npm run db:studio           # Prisma Studio — 데이터를 GUI로 열람·수정
+```
+
+- 초안의 변경 이력은 `QuoteDraftRevision` **별도 테이블**에 행 단위로 쌓입니다.
+  자동 저장 1회가 파일 전체가 아니라 행 하나만 기록하므로, 데이터가 늘어도 저장 비용이 일정합니다.
+- 초안 revision에는 `appliedPricingSnapshot`(단가표 전체 복사본)을 넣지 않습니다.
+  발행된 견적서에만 스냅샷으로 보관합니다.
+- `revision` 낙관적 잠금과 이력 정리가 한 트랜잭션 안에서 처리됩니다.
+- 연결 정보는 `.env` 의 `DATABASE_URL` 입니다. SQLite 파일 경로는 `prisma/schema.prisma`
+  기준 상대경로라 `file:../data/queen-os.db` 로 적습니다. PostgreSQL로 옮길 때는
+  `schema.prisma` 의 `provider` 와 이 값만 바꾸면 됩니다.
+
+### 기존 JSON 저장소에서 이관
+
+`data/db.json` 을 쓰던 버전에서 올라온 경우 한 번만 실행하세요.
+
+```bash
+npm run db:migrate-legacy-json
+```
+
+단가표·견적서·초안과 모든 revision 이력을 옮기고, 원본은 `db.json.migrated-<timestamp>`
+로 이름만 바꿔 보존합니다. SQLite에 이미 데이터가 있으면 중복 이관을 막기 위해 중단합니다.

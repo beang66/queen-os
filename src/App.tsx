@@ -6,7 +6,12 @@ import { QuoteHistoryAudit } from './components/QuoteHistoryAudit';
 import { SystemDiagram } from './components/SystemDiagram';
 import { ToastNotification } from './components/common/ToastNotification';
 import { ParsedPriceItem, PricingItem, QuoteDocument, QuoteStatus } from './types';
-import { fetchJson } from './lib/api';
+import { fetchJson, fetchValidated } from './lib/api';
+import {
+  PricingListResponse,
+  QuoteListResponse,
+  QuoteResponse,
+} from './schemas';
 
 /**
  * 퀸 주방가구 스마트 견적 & 원가 자동화 시스템 (Queen-OS) 메인 앱 컴포넌트
@@ -29,7 +34,7 @@ export default function App() {
   // 단가표 DB 데이터 조회 API
   const fetchPricingItems = async () => {
     try {
-      const data = await fetchJson('/api/pricing');
+      const data = await fetchValidated(PricingListResponse, '/api/pricing');
       setPricingItems(data.data);
     } catch (err) {
       console.error('Failed to fetch pricing items:', err);
@@ -39,7 +44,7 @@ export default function App() {
   // 발행된 견적서 이력 조회 API
   const fetchQuotes = async () => {
     try {
-      const data = await fetchJson('/api/quotes');
+      const data = await fetchValidated(QuoteListResponse, '/api/quotes');
       setQuotes(data.data);
     } catch (err) {
       console.error('Failed to fetch quotes:', err);
@@ -148,7 +153,7 @@ export default function App() {
     publishMeta?: any;
     draftId?: string;
   }): Promise<QuoteDocument> => {
-    const data = await fetchJson<{ data: QuoteDocument }>('/api/quotes', {
+    const data = await fetchValidated(QuoteResponse, '/api/quotes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

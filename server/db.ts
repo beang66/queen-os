@@ -1,18 +1,20 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
+import { PrismaClient } from '@prisma/client';
+import type { Draft as DraftRow, Quote as QuoteRow, QuoteDraftRevision as RevisionRow, PricingItem as PricingRow } from '@prisma/client';
 import {
   DraftPayload,
   DraftStatus,
+  OrderEntity,
   PricingItem,
+  QuoteCalculationResult,
   QuoteDocument,
   QuoteDraft,
   QuoteDraftSummary,
+  QuotePublishMeta,
 } from '../src/types.js';
 import { DEFAULT_PRICING_CATALOG } from './defaultCatalog.js';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const prisma = new PrismaClient();
 
 /** 초안 1건이 보관하는 최대 변경 이력 수 */
 const MAX_DRAFT_HISTORY = 20;
@@ -20,13 +22,6 @@ const MAX_DRAFT_HISTORY = 20;
 const ARCHIVE_AFTER_DAYS = 30;
 /** 보관 상태로 이 기간이 더 지나면 영구 삭제 */
 const PURGE_AFTER_DAYS = 90;
-
-interface DatabaseSchema {
-  pricingItems: PricingItem[];
-  quotes: QuoteDocument[];
-  drafts: QuoteDraft[];
-  version: number;
-}
 
 /**
  * 초안 저장 결과.
@@ -38,170 +33,204 @@ export type DraftSaveResult =
   | { status: 'NOT_FOUND' }
   | { status: 'CONFLICT'; current: QuoteDraft };
 
-const daysBetween = (from: string, to: number) => (to - new Date(from).getTime()) / 86_400_000;
+const daysBetween = (from: Date, to: number) => (to - from.getTime()) / 86_400_000;
 
-class Store {
-  private data: DatabaseSchema = {
-    pricingItems: [],
-    quotes: [],
-    drafts: [],
-    version: 1,
+// ---------------------------------------------------------------------------
+// Prisma row → 도메인 타입 매핑
+// (저장 형식(테이블·컬럼)과 API가 주고받는 모양을 분리해두면, 나중에 스키마를
+//  바꿔도 서버 라우트는 손댈 필요가 없다.)
+// ---------------------------------------------------------------------------
+
+function toPricingItem(row: PricingRow): PricingItem {
+  return {
+    id: row.id,
+    code: row.code,
+    category: row.category as PricingItem['category'],
+    name: row.name,
+    spec: row.spec,
+    material: row.material,
+    unit: row.unit,
+    costPrice: row.costPrice,
+    sellingPrice: row.sellingPrice,
+    supplier: row.supplier,
+    stockStatus: row.stockStatus as PricingItem['stockStatus'],
+    notes: row.notes ?? undefined,
+    updatedAt: row.updatedAt.toISOString(),
   };
+}
 
+function toQuoteDocument(row: QuoteRow): QuoteDocument {
+  return {
+    id: row.id,
+    quoteNumber: row.quoteNumber,
+    title: row.title,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    status: row.status as QuoteDocument['status'],
+    targetMarginRate: row.targetMarginRate,
+    version: row.version,
+    parentQuoteId: row.parentQuoteId ?? undefined,
+    publishMeta: (row.publishMeta as unknown as QuotePublishMeta | null) ?? undefined,
+    orderEntity: row.orderEntity as unknown as OrderEntity,
+    calculationResult: row.calculationResult as unknown as QuoteCalculationResult,
+    appliedPricingSnapshot: (row.appliedPricingSnapshot as unknown as PricingItem[] | null) ?? undefined,
+    notes: row.notes ?? undefined,
+    companyInfo: row.companyInfo as unknown as QuoteDocument['companyInfo'],
+  };
+}
+
+function toDraft(row: DraftRow & { revisions: RevisionRow[] }): QuoteDraft {
+  return {
+    id: row.id,
+    revision: row.revision,
+    status: row.status as DraftStatus,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    lastEditorId: row.lastEditorId ?? '',
+    payload: row.payload as unknown as DraftPayload,
+    history: [...row.revisions]
+      .sort((a, b) => a.revision - b.revision)
+      .map((r) => ({
+        revision: r.revision,
+        savedAt: r.savedAt.toISOString(),
+        label: r.label,
+        payload: r.payload as unknown as DraftPayload,
+      })),
+    pricingFingerprint: row.pricingFingerprint,
+    publishedQuoteIds: (row.publishedQuoteIds as unknown as string[]) ?? [],
+  };
+}
+
+function toDraftSummary(row: DraftRow): QuoteDraftSummary {
+  const payload = row.payload as unknown as DraftPayload;
+  return {
+    id: row.id,
+    revision: row.revision,
+    status: row.status as DraftStatus,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    step: row.step as QuoteDraftSummary['step'],
+    customerName: row.customerName,
+    projectName: row.projectName,
+    quoteTitle: payload?.quoteTitle ?? '',
+    itemCount: payload?.reviewItems?.length ?? 0,
+    totalAmount: row.totalAmount ?? null,
+    publishedQuoteIds: (row.publishedQuoteIds as unknown as string[]) ?? [],
+  };
+}
+
+/**
+ * 견적서 목록 조회 시 원문 대조에 쓰는 대소문자 무시 부분일치.
+ * SQLite LIKE 는 ASCII 문자에 한해 기본적으로 대소문자를 구분하지 않는다
+ * (한글은 대소문자 구분이 없으므로 영향받지 않는다).
+ */
+const contains = (value: string) => ({ contains: value });
+
+class PrismaStore {
   constructor() {
-    this.init();
+    // 서버 기동 시 1회, 오래된 초안 보관·폐기 정책을 실행한다.
+    this.runDraftRetention().catch((err) => console.error('초안 보관 정책 실행 실패:', err));
   }
 
-  private init() {
-    try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        this.data = {
-          pricingItems: Array.isArray(parsed.pricingItems) && parsed.pricingItems.length > 0
-            ? parsed.pricingItems
-            : [...DEFAULT_PRICING_CATALOG],
-          quotes: Array.isArray(parsed.quotes) ? parsed.quotes : [],
-          drafts: Array.isArray(parsed.drafts) ? parsed.drafts : [],
-          version: parsed.version || 1,
-        };
-      } else {
-        this.data = {
-          pricingItems: [...DEFAULT_PRICING_CATALOG],
-          quotes: [],
-          drafts: [],
-          version: 1,
-        };
-        this.save();
-      }
-      this.runDraftRetention();
-    } catch (err) {
-      console.error('Error initializing data store, using in-memory defaults:', err);
-      this.data = {
-        pricingItems: [...DEFAULT_PRICING_CATALOG],
-        quotes: [],
-        drafts: [],
-        version: 1,
-      };
-    }
-  }
-
-  private save() {
-    try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
-    } catch (err) {
-      console.error('Failed to write db.json:', err);
-    }
-  }
-
+  // ---------------------------------------------------------------------
   // PRICING CRUD
-  public getPricingItems(search?: string, category?: string): PricingItem[] {
-    let items = [...this.data.pricingItems];
-    if (category && category !== 'ALL') {
-      items = items.filter((i) => i.category === category);
-    }
+  // ---------------------------------------------------------------------
+  public async getPricingItems(search?: string, category?: string): Promise<PricingItem[]> {
+    const where: Record<string, unknown> = {};
+    if (category && category !== 'ALL') where.category = category;
     if (search && search.trim()) {
-      const q = search.toLowerCase().trim();
-      items = items.filter(
-        (i) =>
-          i.name.toLowerCase().includes(q) ||
-          i.code.toLowerCase().includes(q) ||
-          i.material.toLowerCase().includes(q) ||
-          i.spec.toLowerCase().includes(q) ||
-          i.supplier.toLowerCase().includes(q)
-      );
+      const q = search.trim();
+      where.OR = [
+        { name: contains(q) },
+        { code: contains(q) },
+        { material: contains(q) },
+        { spec: contains(q) },
+        { supplier: contains(q) },
+      ];
     }
-    return items;
+    const rows = await prisma.pricingItem.findMany({ where, orderBy: { updatedAt: 'desc' } });
+    return rows.map(toPricingItem);
   }
 
-  public getPricingItemById(id: string): PricingItem | undefined {
-    return this.data.pricingItems.find((i) => i.id === id);
+  public async getPricingItemById(id: string): Promise<PricingItem | undefined> {
+    const row = await prisma.pricingItem.findUnique({ where: { id } });
+    return row ? toPricingItem(row) : undefined;
   }
 
-  public getPricingItemByCode(code: string): PricingItem | undefined {
-    return this.data.pricingItems.find((i) => i.code.toLowerCase() === code.toLowerCase());
+  public async getPricingItemByCode(code: string): Promise<PricingItem | undefined> {
+    const row = await prisma.pricingItem.findFirst({ where: { code: { equals: code } } });
+    return row ? toPricingItem(row) : undefined;
   }
 
-  public addPricingItem(item: Omit<PricingItem, 'id' | 'updatedAt'>): PricingItem {
-    const newItem: PricingItem = {
-      ...item,
-      id: `prc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      updatedAt: new Date().toISOString(),
-    };
-    this.data.pricingItems.unshift(newItem);
-    this.save();
-    return newItem;
+  public async addPricingItem(item: Omit<PricingItem, 'id' | 'updatedAt'>): Promise<PricingItem> {
+    const row = await prisma.pricingItem.create({ data: item });
+    return toPricingItem(row);
   }
 
-  public updatePricingItem(id: string, updates: Partial<PricingItem>): PricingItem | null {
-    const index = this.data.pricingItems.findIndex((i) => i.id === id);
-    if (index === -1) return null;
-
-    this.data.pricingItems[index] = {
-      ...this.data.pricingItems[index],
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    this.save();
-    return this.data.pricingItems[index];
+  public async updatePricingItem(id: string, updates: Partial<PricingItem>): Promise<PricingItem | null> {
+    try {
+      const { id: _ignoreId, updatedAt: _ignoreUpdatedAt, ...data } = updates;
+      const row = await prisma.pricingItem.update({ where: { id }, data });
+      return toPricingItem(row);
+    } catch {
+      return null; // 존재하지 않는 id — Prisma P2025
+    }
   }
 
-  public deletePricingItem(id: string): boolean {
-    const prevLen = this.data.pricingItems.length;
-    this.data.pricingItems = this.data.pricingItems.filter((i) => i.id !== id);
-    if (this.data.pricingItems.length !== prevLen) {
-      this.save();
+  public async deletePricingItem(id: string): Promise<boolean> {
+    try {
+      await prisma.pricingItem.delete({ where: { id } });
       return true;
+    } catch {
+      return false;
     }
-    return false;
   }
 
-  public bulkUpsertPricingItems(items: Array<Omit<PricingItem, 'id' | 'updatedAt'>>): { added: number; updated: number } {
+  public async bulkUpsertPricingItems(
+    items: Array<Omit<PricingItem, 'id' | 'updatedAt'>>
+  ): Promise<{ added: number; updated: number }> {
     let added = 0;
     let updated = 0;
 
     for (const item of items) {
-      const existing = this.data.pricingItems.find(
-        (i) => i.code.toLowerCase() === item.code.toLowerCase() || i.name.toLowerCase() === item.name.toLowerCase()
-      );
+      const existing = await prisma.pricingItem.findFirst({
+        where: { OR: [{ code: item.code }, { name: item.name }] },
+      });
       if (existing) {
-        Object.assign(existing, item, { updatedAt: new Date().toISOString() });
+        await prisma.pricingItem.update({ where: { id: existing.id }, data: item });
         updated++;
       } else {
-        const newItem: PricingItem = {
-          ...item,
-          id: `prc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          updatedAt: new Date().toISOString(),
-        };
-        this.data.pricingItems.unshift(newItem);
+        await prisma.pricingItem.create({ data: item });
         added++;
       }
     }
-    this.save();
     return { added, updated };
   }
 
-  public resetPricingCatalog(): PricingItem[] {
-    this.data.pricingItems = JSON.parse(JSON.stringify(DEFAULT_PRICING_CATALOG));
-    this.save();
-    return this.data.pricingItems;
+  public async resetPricingCatalog(): Promise<PricingItem[]> {
+    await prisma.pricingItem.deleteMany({});
+    await prisma.pricingItem.createMany({
+      data: DEFAULT_PRICING_CATALOG.map(({ id, updatedAt, ...rest }) => rest),
+    });
+    return this.getPricingItems();
   }
 
+  // ---------------------------------------------------------------------
   // QUOTES CRUD & AUDIT
-  public getQuotes(status?: string, search?: string): QuoteDocument[] {
-    let quotes = [...this.data.quotes];
-    if (status && status !== 'ALL') {
-      quotes = quotes.filter((q) => q.status === status);
-    }
+  // ---------------------------------------------------------------------
+  public async getQuotes(status?: string, search?: string): Promise<QuoteDocument[]> {
+    const where: Record<string, unknown> = {};
+    if (status && status !== 'ALL') where.status = status;
     if (search && search.trim()) {
-      const s = search.toLowerCase().trim();
+      const s = search.trim();
+      where.OR = [{ quoteNumber: contains(s) }, { title: contains(s) }];
+      // orderEntity 는 Json 컬럼이라 SQLite에서 텍스트 검색이 불가능하므로
+      // 고객명·주소·연락처는 조회 후 애플리케이션 레벨에서 한 번 더 거른다.
+    }
+    const rows = await prisma.quote.findMany({ where, orderBy: { createdAt: 'desc' } });
+    let quotes = rows.map(toQuoteDocument);
+    if (search && search.trim()) {
+      const s = search.trim().toLowerCase();
       quotes = quotes.filter(
         (q) =>
           q.quoteNumber.toLowerCase().includes(s) ||
@@ -211,119 +240,113 @@ class Store {
           q.orderEntity.contact.includes(s)
       );
     }
-    return quotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return quotes;
   }
 
-  public getQuoteById(id: string): QuoteDocument | undefined {
-    return this.data.quotes.find((q) => q.id === id || q.quoteNumber === id);
+  public async getQuoteById(id: string): Promise<QuoteDocument | undefined> {
+    const row =
+      (await prisma.quote.findUnique({ where: { id } })) ??
+      (await prisma.quote.findUnique({ where: { quoteNumber: id } }));
+    return row ? toQuoteDocument(row) : undefined;
   }
 
-  public saveQuote(quote: Omit<QuoteDocument, 'id' | 'createdAt' | 'updatedAt' | 'quoteNumber'> & { quoteNumber?: string }): QuoteDocument {
+  public async saveQuote(
+    quote: Omit<QuoteDocument, 'id' | 'createdAt' | 'updatedAt' | 'quoteNumber'> & { quoteNumber?: string }
+  ): Promise<QuoteDocument> {
     const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const todaysCount = this.data.quotes.filter((q) => q.createdAt.startsWith(new Date().toISOString().slice(0, 10))).length + 1;
-    const generatedNumber = quote.quoteNumber || `QN-${todayStr}-${String(todaysCount).padStart(3, '0')}`;
+    const todayPrefix = new Date().toISOString().slice(0, 10);
+    const todaysCount = await prisma.quote.count({ where: { createdAt: { gte: new Date(`${todayPrefix}T00:00:00.000Z`) } } });
+    const generatedNumber = quote.quoteNumber || `QN-${todayStr}-${String(todaysCount + 1).padStart(3, '0')}`;
 
-    const newQuote: QuoteDocument = {
-      ...quote,
-      id: `quote-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      quoteNumber: generatedNumber,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    this.data.quotes.unshift(newQuote);
-    this.save();
-    return newQuote;
+    const row = await prisma.quote.create({
+      data: {
+        quoteNumber: generatedNumber,
+        title: quote.title,
+        status: quote.status,
+        targetMarginRate: quote.targetMarginRate,
+        version: quote.version ?? 1,
+        parentQuoteId: quote.parentQuoteId ?? null,
+        publishMeta: (quote.publishMeta ?? undefined) as any,
+        orderEntity: quote.orderEntity as any,
+        calculationResult: quote.calculationResult as any,
+        appliedPricingSnapshot: (quote.appliedPricingSnapshot ?? undefined) as any,
+        notes: quote.notes ?? '',
+        companyInfo: quote.companyInfo as any,
+      },
+    });
+    return toQuoteDocument(row);
   }
 
-  public updateQuote(id: string, updates: Partial<QuoteDocument>): QuoteDocument | null {
-    const index = this.data.quotes.findIndex((q) => q.id === id);
-    if (index === -1) return null;
-
-    this.data.quotes[index] = {
-      ...this.data.quotes[index],
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    this.save();
-    return this.data.quotes[index];
-  }
-
-  public deleteQuote(id: string): boolean {
-    const prevLen = this.data.quotes.length;
-    this.data.quotes = this.data.quotes.filter((q) => q.id !== id);
-    if (this.data.quotes.length !== prevLen) {
-      this.save();
-      return true;
+  public async updateQuote(id: string, updates: Partial<QuoteDocument>): Promise<QuoteDocument | null> {
+    try {
+      const { id: _ignoreId, createdAt: _c, updatedAt: _u, ...rest } = updates as any;
+      const row = await prisma.quote.update({ where: { id }, data: rest });
+      return toQuoteDocument(row);
+    } catch {
+      return null;
     }
-    return false;
   }
 
-  // -------------------------------------------------------------------------
+  public async deleteQuote(id: string): Promise<boolean> {
+    try {
+      await prisma.quote.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 견적 초안 (DRAFTS)
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------
 
   /**
    * 단가표의 지문(fingerprint).
    * 가격·단위에 영향을 주는 필드만 해싱하므로, 메모 수정 등으로는 값이 바뀌지 않는다.
    * 초안에 기록해 두었다가 나중에 비교해 "단가가 바뀌었으니 다시 계산" 안내에 사용한다.
    */
-  public getPricingFingerprint(): string {
-    const material = this.data.pricingItems
+  public async getPricingFingerprint(): Promise<string> {
+    const rows = await prisma.pricingItem.findMany({
+      select: { id: true, code: true, costPrice: true, sellingPrice: true, unit: true },
+    });
+    const material = rows
       .map((i) => `${i.id}:${i.code}:${i.costPrice}:${i.sellingPrice}:${i.unit}`)
       .sort()
       .join('|');
     return crypto.createHash('sha1').update(material).digest('hex').slice(0, 16);
   }
 
-  private toDraftSummary(d: QuoteDraft): QuoteDraftSummary {
-    return {
-      id: d.id,
-      revision: d.revision,
-      status: d.status,
-      createdAt: d.createdAt,
-      updatedAt: d.updatedAt,
-      step: d.payload.step,
-      customerName: d.payload.orderEntity?.customerName ?? '',
-      projectName: d.payload.orderEntity?.projectName ?? '',
-      quoteTitle: d.payload.quoteTitle ?? '',
-      itemCount: d.payload.reviewItems?.length ?? 0,
-      totalAmount: d.payload.calculationResult?.summary?.finalGrandTotal ?? null,
-      publishedQuoteIds: d.publishedQuoteIds ?? [],
-    };
+  public async createDraft(payload: DraftPayload, editorId: string): Promise<QuoteDraft> {
+    const fingerprint = await this.getPricingFingerprint();
+    const row = await prisma.draft.create({
+      data: {
+        status: 'ACTIVE',
+        revision: 1,
+        payload: payload as any,
+        customerName: payload.orderEntity?.customerName ?? '',
+        projectName: payload.orderEntity?.projectName ?? '',
+        step: payload.step ?? 1,
+        totalAmount: payload.calculationResult?.summary?.finalGrandTotal ?? null,
+        lastEditorId: editorId,
+        pricingFingerprint: fingerprint,
+        publishedQuoteIds: [] as any,
+        revisions: { create: [{ revision: 1, label: '초안 생성', payload: payload as any }] },
+      },
+      include: { revisions: true },
+    });
+    return toDraft(row);
   }
 
-  public createDraft(payload: DraftPayload, editorId: string): QuoteDraft {
-    const now = new Date().toISOString();
-    const draft: QuoteDraft = {
-      id: `draft-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      revision: 1,
-      status: 'ACTIVE',
-      createdAt: now,
-      updatedAt: now,
-      lastEditorId: editorId,
-      payload,
-      history: [{ revision: 1, savedAt: now, label: '초안 생성', payload }],
-      pricingFingerprint: this.getPricingFingerprint(),
-      publishedQuoteIds: [],
-    };
-    this.data.drafts.unshift(draft);
-    this.save();
-    return draft;
+  public async getDrafts(status?: DraftStatus | 'ALL'): Promise<QuoteDraftSummary[]> {
+    const where: Record<string, unknown> = {};
+    if (status && status !== 'ALL') where.status = status;
+    const rows = await prisma.draft.findMany({ where, orderBy: { updatedAt: 'desc' } });
+    return rows.map(toDraftSummary);
   }
 
-  public getDrafts(status?: DraftStatus | 'ALL'): QuoteDraftSummary[] {
-    let drafts = [...this.data.drafts];
-    if (status && status !== 'ALL') {
-      drafts = drafts.filter((d) => d.status === status);
-    }
-    return drafts
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .map((d) => this.toDraftSummary(d));
-  }
-
-  public getDraftById(id: string): QuoteDraft | undefined {
-    return this.data.drafts.find((d) => d.id === id);
+  public async getDraftById(id: string): Promise<QuoteDraft | undefined> {
+    const row = await prisma.draft.findUnique({ where: { id }, include: { revisions: true } });
+    return row ? toDraft(row) : undefined;
   }
 
   /**
@@ -331,101 +354,106 @@ class Store {
    * 클라이언트가 보낸 revision 이 서버 최신본과 다르면 덮어쓰지 않고 CONFLICT 를 돌려준다.
    * (같은 초안을 여러 창에서 열어 둔 경우를 감지하기 위함)
    */
-  public saveDraft(
+  public async saveDraft(
     id: string,
     args: { revision: number; payload: DraftPayload; label?: string; editorId: string }
-  ): DraftSaveResult {
-    const index = this.data.drafts.findIndex((d) => d.id === id);
-    if (index === -1) return { status: 'NOT_FOUND' };
-
-    const current = this.data.drafts[index];
+  ): Promise<DraftSaveResult> {
+    const current = await prisma.draft.findUnique({ where: { id }, include: { revisions: true } });
+    if (!current) return { status: 'NOT_FOUND' };
     if (args.revision !== current.revision) {
-      return { status: 'CONFLICT', current };
+      return { status: 'CONFLICT', current: toDraft(current) };
     }
 
-    const now = new Date().toISOString();
     const nextRevision = current.revision + 1;
-    const entry = {
-      revision: nextRevision,
-      savedAt: now,
-      label: args.label || '자동 저장',
-      payload: args.payload,
-    };
+    // 계산 결과가 갱신된 저장이라면 단가 지문도 함께 갱신한다.
+    const calcChanged =
+      args.payload.calculationResult &&
+      args.payload.calculationResult.calculatedAt !==
+        (current.payload as unknown as DraftPayload)?.calculationResult?.calculatedAt;
+    const pricingFingerprint = calcChanged ? await this.getPricingFingerprint() : current.pricingFingerprint;
 
-    const updated: QuoteDraft = {
-      ...current,
-      revision: nextRevision,
-      updatedAt: now,
-      lastEditorId: args.editorId,
-      payload: args.payload,
-      history: [...current.history, entry].slice(-MAX_DRAFT_HISTORY),
-      // 계산 결과가 갱신된 저장이라면 단가 지문도 함께 갱신한다.
-      pricingFingerprint:
-        args.payload.calculationResult &&
-        args.payload.calculationResult.calculatedAt !== current.payload.calculationResult?.calculatedAt
-          ? this.getPricingFingerprint()
-          : current.pricingFingerprint,
-    };
+    // 이력이 MAX_DRAFT_HISTORY 를 넘으면 가장 오래된 것부터 정리한다.
+    const overflow = current.revisions.length + 1 - MAX_DRAFT_HISTORY;
+    if (overflow > 0) {
+      const oldestIds = [...current.revisions]
+        .sort((a, b) => a.revision - b.revision)
+        .slice(0, overflow)
+        .map((r) => r.id);
+      await prisma.quoteDraftRevision.deleteMany({ where: { id: { in: oldestIds } } });
+    }
 
-    this.data.drafts[index] = updated;
-    this.save();
-    return { status: 'OK', draft: updated };
+    const row = await prisma.draft.update({
+      where: { id },
+      data: {
+        revision: nextRevision,
+        payload: args.payload as any,
+        customerName: args.payload.orderEntity?.customerName ?? '',
+        projectName: args.payload.orderEntity?.projectName ?? '',
+        step: args.payload.step ?? 1,
+        totalAmount: args.payload.calculationResult?.summary?.finalGrandTotal ?? null,
+        lastEditorId: args.editorId,
+        pricingFingerprint,
+        revisions: {
+          create: [{ revision: nextRevision, label: args.label || '자동 저장', payload: args.payload as any }],
+        },
+      },
+      include: { revisions: true },
+    });
+    return { status: 'OK', draft: toDraft(row) };
   }
 
   /** 과거 저장 시점으로 되돌린다 (복구 자체도 새 revision 으로 기록). */
-  public restoreDraftRevision(id: string, revision: number, editorId: string): QuoteDraft | null {
-    const index = this.data.drafts.findIndex((d) => d.id === id);
-    if (index === -1) return null;
+  public async restoreDraftRevision(id: string, revision: number, editorId: string): Promise<QuoteDraft | null> {
+    const current = await prisma.draft.findUnique({ where: { id }, include: { revisions: true } });
+    if (!current) return null;
 
-    const current = this.data.drafts[index];
-    const target = current.history.find((h) => h.revision === revision);
+    const target = current.revisions.find((r) => r.revision === revision);
     if (!target) return null;
 
-    const now = new Date().toISOString();
+    const targetPayload = target.payload as unknown as DraftPayload;
     const nextRevision = current.revision + 1;
-    const updated: QuoteDraft = {
-      ...current,
-      revision: nextRevision,
-      updatedAt: now,
-      lastEditorId: editorId,
-      status: current.status === 'ARCHIVED' ? 'ACTIVE' : current.status,
-      payload: target.payload,
-      history: [
-        ...current.history,
-        { revision: nextRevision, savedAt: now, label: `rev.${revision} 상태로 복구`, payload: target.payload },
-      ].slice(-MAX_DRAFT_HISTORY),
-    };
 
-    this.data.drafts[index] = updated;
-    this.save();
-    return updated;
+    const row = await prisma.draft.update({
+      where: { id },
+      data: {
+        revision: nextRevision,
+        status: current.status === 'ARCHIVED' ? 'ACTIVE' : current.status,
+        payload: target.payload as any,
+        customerName: targetPayload.orderEntity?.customerName ?? '',
+        projectName: targetPayload.orderEntity?.projectName ?? '',
+        step: targetPayload.step ?? 1,
+        totalAmount: targetPayload.calculationResult?.summary?.finalGrandTotal ?? null,
+        lastEditorId: editorId,
+        revisions: {
+          create: [{ revision: nextRevision, label: `rev.${revision} 상태로 복구`, payload: target.payload as any }],
+        },
+      },
+      include: { revisions: true },
+    });
+    return toDraft(row);
   }
 
-  public deleteDraft(id: string): boolean {
-    const prevLen = this.data.drafts.length;
-    this.data.drafts = this.data.drafts.filter((d) => d.id !== id);
-    if (this.data.drafts.length !== prevLen) {
-      this.save();
+  public async deleteDraft(id: string): Promise<boolean> {
+    try {
+      await prisma.draft.delete({ where: { id } });
       return true;
+    } catch {
+      return false;
     }
-    return false;
   }
 
   /** 견적서가 발행되면 초안을 PUBLISHED 로 전환하고 발행 문서 id 를 연결한다. */
-  public markDraftPublished(id: string, quoteId: string): QuoteDraft | null {
-    const index = this.data.drafts.findIndex((d) => d.id === id);
-    if (index === -1) return null;
+  public async markDraftPublished(id: string, quoteId: string): Promise<QuoteDraft | null> {
+    const current = await prisma.draft.findUnique({ where: { id } });
+    if (!current) return null;
 
-    const current = this.data.drafts[index];
-    const updated: QuoteDraft = {
-      ...current,
-      status: 'PUBLISHED',
-      updatedAt: new Date().toISOString(),
-      publishedQuoteIds: [...current.publishedQuoteIds, quoteId],
-    };
-    this.data.drafts[index] = updated;
-    this.save();
-    return updated;
+    const publishedQuoteIds = [...((current.publishedQuoteIds as unknown as string[]) ?? []), quoteId];
+    const row = await prisma.draft.update({
+      where: { id },
+      data: { status: 'PUBLISHED', publishedQuoteIds: publishedQuoteIds as any },
+      include: { revisions: true },
+    });
+    return toDraft(row);
   }
 
   /**
@@ -433,32 +461,39 @@ class Store {
    * ACTIVE 인데 30일 이상 수정이 없으면 ARCHIVED 로, ARCHIVED 상태로 90일이 더 지나면 삭제한다.
    * 발행 완료(PUBLISHED)된 초안은 이력 가치가 있으므로 보관만 하고 삭제하지 않는다.
    */
-  public runDraftRetention(): { archived: number; purged: number } {
+  public async runDraftRetention(): Promise<{ archived: number; purged: number }> {
     const now = Date.now();
-    let archived = 0;
-    let purged = 0;
 
-    for (const draft of this.data.drafts) {
-      if (draft.status === 'ACTIVE' && daysBetween(draft.updatedAt, now) > ARCHIVE_AFTER_DAYS) {
-        draft.status = 'ARCHIVED';
-        archived++;
-      }
+    const staleActive = await prisma.draft.findMany({ where: { status: 'ACTIVE' }, select: { id: true, updatedAt: true } });
+    const toArchive = staleActive.filter((d) => daysBetween(d.updatedAt, now) > ARCHIVE_AFTER_DAYS).map((d) => d.id);
+    let archived = 0;
+    if (toArchive.length > 0) {
+      const result = await prisma.draft.updateMany({ where: { id: { in: toArchive } }, data: { status: 'ARCHIVED' } });
+      archived = result.count;
     }
 
-    const before = this.data.drafts.length;
-    this.data.drafts = this.data.drafts.filter((d) => {
-      if (d.status !== 'ARCHIVED') return true;
-      if (d.publishedQuoteIds.length > 0) return true;
-      return daysBetween(d.updatedAt, now) <= ARCHIVE_AFTER_DAYS + PURGE_AFTER_DAYS;
+    const archivedDrafts = await prisma.draft.findMany({
+      where: { status: 'ARCHIVED' },
+      select: { id: true, updatedAt: true, publishedQuoteIds: true },
     });
-    purged = before - this.data.drafts.length;
+    const toPurge = archivedDrafts
+      .filter((d) => {
+        const published = ((d.publishedQuoteIds as unknown as string[]) ?? []).length > 0;
+        if (published) return false;
+        return daysBetween(d.updatedAt, now) > PURGE_AFTER_DAYS;
+      })
+      .map((d) => d.id);
+    let purged = 0;
+    if (toPurge.length > 0) {
+      const result = await prisma.draft.deleteMany({ where: { id: { in: toPurge } } });
+      purged = result.count;
+    }
 
     if (archived > 0 || purged > 0) {
-      this.save();
       console.log(`[초안 정리] 보관 전환 ${archived}건, 영구 삭제 ${purged}건`);
     }
     return { archived, purged };
   }
 }
 
-export const db = new Store();
+export const db = new PrismaStore();

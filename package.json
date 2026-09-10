@@ -8,10 +8,16 @@
     "build": "vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
-    "dev:no-open": "node scripts/dev.mjs --no-open"
+    "dev:no-open": "node scripts/dev.mjs --no-open",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:migrate-legacy-json": "tsx scripts/migrate-json-to-sqlite.ts"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
+    "@prisma/client": "6.19.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "lucide-react": "^0.475.0",
@@ -19,7 +25,8 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "4.6.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
@@ -29,6 +36,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "prisma": "6.19.3",
     "tsx": "^4.23.13",
     "typescript": "^5.3.3",
     "vite": "^5.4.14"

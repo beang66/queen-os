@@ -1,0 +1,88 @@
+// Queen-OS 데이터 계층. SQLite로 시작하고, 필요해지면 provider/url만 교체합니다.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model PricingItem {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  category     String   // CARCASS | DOOR | COUNTERTOP | HARDWARE | APPLIANCE | LABOR | ACCESSORY
+  name         String
+  spec         String
+  material     String
+  unit         String
+  costPrice    Int      // 매입원가 (원, VAT 별도)
+  sellingPrice Int      // 출고단가 (원, VAT 별도)
+  supplier     String
+  stockStatus  String   @default("INSTOCK")
+  notes        String?
+  updatedAt    DateTime @updatedAt
+
+  @@index([category])
+}
+
+model Quote {
+  id               String   @id @default(cuid())
+  quoteNumber      String   @unique // QN-20260908-001, -V2, -V3
+  title            String
+  status           String   @default("ISSUED")
+  version          Int      @default(1)
+  parentQuoteId    String?
+  targetMarginRate Float
+
+  orderEntity            Json    // OrderEntity
+  calculationResult      Json    // QuoteCalculationResult — 발행 시점 스냅샷 (appliedPricingSnapshot 포함이 정당함)
+  publishMeta            Json?   // QuotePublishMeta
+  appliedPricingSnapshot Json?   // PricingItem[] (현재는 항상 비어 있음 — QuoteDocument 타입과의 호환용)
+  companyInfo            Json    // { name, representative, bizNumber, address, phone, email }
+  notes                  String?
+
+  draftId   String?
+  draft     Draft?   @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model Draft {
+  id       String @id @default(cuid())
+  status   String @default("ACTIVE") // ACTIVE | PUBLISHED | ARCHIVED
+  revision Int    @default(1)        // 낙관적 잠금 카운터
+  payload  Json                      // DraftPayload — 현재 상태만 (이력은 아래 테이블로)
+
+  // 목록 조회를 payload 파싱 없이 처리하기 위한 비정규화 컬럼
+  customerName String @default("")
+  projectName  String @default("")
+  step         Int    @default(1)
+  totalAmount  Int?
+
+  pricingFingerprint String?
+  lastEditorId       String?
+  publishedQuoteIds  Json    @default("[]")
+
+  revisions QuoteDraftRevision[]
+  quotes    Quote[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, updatedAt])
+}
+
+model QuoteDraftRevision {
+  id       Int      @id @default(autoincrement())
+  draftId  String
+  draft    Draft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  revision Int
+  label    String   // 자동 저장 | 수동 임시 저장 | 단계 이동
+  payload  Json     // DraftPayload. appliedPricingSnapshot 제외 — 용량 절감
+  savedAt  DateTime @default(now())
+
+  @@unique([draftId, revision])
+  @@index([draftId, savedAt])
+}
