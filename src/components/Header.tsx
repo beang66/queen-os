@@ -26,9 +26,11 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between h-14">
           {/* Logo & System Title */}
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-orange-500 rounded flex items-center justify-center font-bold text-lg text-white shadow-sm">
-              Q
-            </div>
+            <img
+              src="/queen-os.png"
+              alt="Queen OS"
+              className="w-8 h-8 rounded object-cover shadow-sm ring-1 ring-white/10"
+            />
             <div className="flex items-baseline gap-2">
               <h1 className="text-base font-bold tracking-tight text-white uppercase">
                 QUEEN KITCHEN
