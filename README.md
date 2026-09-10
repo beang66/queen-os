@@ -56,12 +56,14 @@ src/
   lib/api.ts                  fetch 래퍼 + 응답 스키마 검증
 server/
   calculationEngine.ts        결정론적 원가 산출
-  db.ts                       Prisma/SQLite 저장소 (data/queen-os.db)
+  db.ts                       Prisma/Supabase PostgreSQL 저장소
   validate.ts                 요청 본문·쿼리 검증 헬퍼
   geminiService.ts            AI 문서·자연어 파싱
 prisma/
-  schema.prisma                PricingItem / Quote / Draft / QuoteDraftRevision
+  schema.prisma                PricingItem / Quote / Draft / QuoteDraftRevision (PostgreSQL / snake_case 매핑)
   migrations/                  스키마 변경 이력 (git 추적됨)
+scripts/
+  supabase-init.sql            Supabase SQL Editor DDL (snake_case)
 ```
 
 ## 견적 초안 (자동 저장)
@@ -100,23 +102,22 @@ prisma/
 
 ## 데이터 저장
 
-**Prisma + SQLite** (`data/queen-os.db`)에 단가표·견적서·견적 초안을 보관합니다.
+**Prisma + Supabase PostgreSQL** (`scripts/supabase-init.sql`)에 단가표(`pricing_item`)·견적서(`quote`)·견적 초안(`draft`)·초안 이력(`quote_draft_revision`)을 보관합니다.
 발행된 견적서는 덮어쓰지 않고 `-V2`, `-V3` 번호로 새 문서를 만듭니다.
 
 ```bash
-npm run db:migrate          # 스키마 변경 후 마이그레이션 생성·적용 (개발)
-npm run db:migrate:deploy   # 운영 서버에 마이그레이션 적용
+# Supabase 초기 설정: scripts/supabase-init.sql 복사 → Supabase 대시보드 SQL Editor에서 Run
+npm run db:migrate:deploy   # Supabase 마이그레이션 배포 적용 (DIRECT_URL)
 npm run db:studio           # Prisma Studio — 데이터를 GUI로 열람·수정
 ```
 
-- 초안의 변경 이력은 `QuoteDraftRevision` **별도 테이블**에 행 단위로 쌓입니다.
+- 모든 테이블과 컬럼은 PostgreSQL 표준 `snake_case` 네이밍 규칙(`pricing_item`, `quote`, `draft`, `quote_draft_revision`, `cost_price`, `selling_price`, `quote_number`, `order_entity` 등)을 준수하며, Prisma 스키마에서 `@map` 및 `@@map`으로 도메인 객체와 1:1 매핑됩니다.
+- 초안의 변경 이력은 `quote_draft_revision` **별도 테이블**에 행 단위로 쌓입니다.
   자동 저장 1회가 파일 전체가 아니라 행 하나만 기록하므로, 데이터가 늘어도 저장 비용이 일정합니다.
-- 초안 revision에는 `appliedPricingSnapshot`(단가표 전체 복사본)을 넣지 않습니다.
+- 초안 revision에는 `applied_pricing_snapshot`(단가표 전체 복사본)을 넣지 않습니다.
   발행된 견적서에만 스냅샷으로 보관합니다.
 - `revision` 낙관적 잠금과 이력 정리가 한 트랜잭션 안에서 처리됩니다.
-- 연결 정보는 `.env` 의 `DATABASE_URL` 입니다. SQLite 파일 경로는 `prisma/schema.prisma`
-  기준 상대경로라 `file:../data/queen-os.db` 로 적습니다. PostgreSQL로 옮길 때는
-  `schema.prisma` 의 `provider` 와 이 값만 바꾸면 됩니다.
+- 연결 정보는 `.env` 의 `DATABASE_URL` (Supabase Pooler 6543 포트) 및 `DIRECT_URL` (Supabase 직접 연결 5432 포트)입니다.
 
 ### 기존 JSON 저장소에서 이관
 
