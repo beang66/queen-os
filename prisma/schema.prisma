@@ -6,7 +6,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")    // 앱 런타임 — Pooler (Transaction mode, 6543)
-  directUrl = env("DIRECT_URL")      // 마이그레이션 전용 — Pooler Session mode (5432) 또는 직접 연결
+  directUrl = env("DIRECT_URL")      // 마이그레이션 전용 — 직접 연결 또는 Pooler Session mode
 }
 
 model PricingItem {
@@ -17,38 +17,40 @@ model PricingItem {
   spec         String
   material     String
   unit         String
-  costPrice    Int      // 매입원가 (원, VAT 별도)
-  sellingPrice Int      // 출고단가 (원, VAT 별도)
+  costPrice    Int      @map("cost_price")    // 매입원가 (원, VAT 별도)
+  sellingPrice Int      @map("selling_price") // 출고단가 (원, VAT 별도)
   supplier     String
-  stockStatus  String   @default("INSTOCK")
+  stockStatus  String   @default("INSTOCK") @map("stock_status")
   notes        String?
-  updatedAt    DateTime @updatedAt
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@index([category])
+  @@map("pricing_item")
 }
 
 model Quote {
   id               String   @id @default(cuid())
-  quoteNumber      String   @unique // QN-20260908-001, -V2, -V3
+  quoteNumber      String   @unique @map("quote_number") // QN-20260908-001, -V2, -V3
   title            String
   status           String   @default("ISSUED")
   version          Int      @default(1)
-  parentQuoteId    String?
-  targetMarginRate Float
+  parentQuoteId    String?  @map("parent_quote_id")
+  targetMarginRate Float    @map("target_margin_rate")
 
-  orderEntity            Json    // OrderEntity
-  calculationResult      Json    // QuoteCalculationResult — 발행 시점 스냅샷 (appliedPricingSnapshot 포함이 정당함)
-  publishMeta            Json?   // QuotePublishMeta
-  appliedPricingSnapshot Json?   // PricingItem[] (현재는 항상 비어 있음 — QuoteDocument 타입과의 호환용)
-  companyInfo            Json    // { name, representative, bizNumber, address, phone, email }
+  orderEntity            Json    @map("order_entity")             // OrderEntity
+  calculationResult      Json    @map("calculation_result")       // QuoteCalculationResult — 발행 시점 스냅샷
+  publishMeta            Json?   @map("publish_meta")             // QuotePublishMeta
+  appliedPricingSnapshot Json?   @map("applied_pricing_snapshot") // PricingItem[] (호환용)
+  companyInfo            Json    @map("company_info")             // { name, representative, bizNumber, address, phone, email }
   notes                  String?
 
-  draftId   String?
+  draftId   String?  @map("draft_id")
   draft     Draft?   @relation(fields: [draftId], references: [id], onDelete: SetNull)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([status, createdAt])
+  @@map("quote")
 }
 
 model Draft {
@@ -58,32 +60,34 @@ model Draft {
   payload  Json                      // DraftPayload — 현재 상태만 (이력은 아래 테이블로)
 
   // 목록 조회를 payload 파싱 없이 처리하기 위한 비정규화 컬럼
-  customerName String @default("")
-  projectName  String @default("")
-  step         Int    @default(1)
-  totalAmount  Int?
+  customerName       String  @default("") @map("customer_name")
+  projectName        String  @default("") @map("project_name")
+  step               Int     @default(1)
+  totalAmount        Int?    @map("total_amount")
 
-  pricingFingerprint String?
-  lastEditorId       String?
-  publishedQuoteIds  Json    @default("[]")
+  pricingFingerprint String? @map("pricing_fingerprint")
+  lastEditorId       String? @map("last_editor_id")
+  publishedQuoteIds  Json    @default("[]") @map("published_quote_ids")
 
   revisions QuoteDraftRevision[]
   quotes    Quote[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([status, updatedAt])
+  @@map("draft")
 }
 
 model QuoteDraftRevision {
   id       Int      @id @default(autoincrement())
-  draftId  String
+  draftId  String   @map("draft_id")
   draft    Draft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
   revision Int
   label    String   // 자동 저장 | 수동 임시 저장 | 단계 이동
   payload  Json     // DraftPayload. appliedPricingSnapshot 제외 — 용량 절감
-  savedAt  DateTime @default(now())
+  savedAt  DateTime @default(now()) @map("saved_at")
 
   @@unique([draftId, revision])
   @@index([draftId, savedAt])
+  @@map("quote_draft_revision")
 }
