@@ -1,11 +1,12 @@
-// Queen-OS 데이터 계층. SQLite로 시작하고, 필요해지면 provider/url만 교체합니다.
+// Queen-OS 데이터 계층. PostgreSQL(Supabase)로 운영 중. SQLite로 되돌리려면 provider/url만 교체합니다.
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")    // 앱 런타임 — Pooler (Transaction mode, 6543)
+  directUrl = env("DIRECT_URL")      // 마이그레이션 전용 — Pooler Session mode (5432) 또는 직접 연결
 }
 
 model PricingItem {
