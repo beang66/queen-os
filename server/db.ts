@@ -130,6 +130,20 @@ class PrismaStore {
   constructor() {
     // 서버 기동 시 1회, 오래된 초안 보관·폐기 정책을 실행한다.
     this.runDraftRetention().catch((err) => console.error('초안 보관 정책 실행 실패:', err));
+    this.initCatalogIfNeeded().catch((err) => console.error('단가표 초기화 실패:', err));
+  }
+
+  private async initCatalogIfNeeded() {
+    try {
+      const count = await prisma.pricingItem.count();
+      if (count === 0) {
+        console.log('단가표가 비어 있어 기본 카탈로그를 초기화합니다...');
+        await this.resetPricingCatalog();
+        console.log('기본 단가 카탈로그 초기화 완료.');
+      }
+    } catch (err) {
+      console.error('기본 단가 카탈로그 초기화 중 오류:', err);
+    }
   }
 
   // ---------------------------------------------------------------------
