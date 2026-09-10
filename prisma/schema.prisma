@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model PricingItem {
@@ -75,6 +76,42 @@ model Draft {
 
   @@index([status, updatedAt])
   @@map("draft")
+}
+
+/// AI 파싱 1회 = 1행. 파싱 시점에 만들어지고, 사람이 값을 확정하면
+/// confirmed* 컬럼이 채워집니다. 확정 전 행(confirmedAt = null)은 통계 분모에서 빠집니다.
+model AiParseLog {
+  id   String @id @default(cuid())
+  kind String // ORDER | DOCUMENT
+
+  // ---- 파싱 시점 기록 -------------------------------------------------
+  engine       String // GEMINI | HEURISTIC (Gemini 실패 시 규칙 기반 폴백)
+  model        String  @default("")
+  latencyMs    Int     @default(0) @map("latency_ms")
+  promptChars  Int     @default(0) @map("prompt_chars")
+  hasAttachment Boolean @default(false) @map("has_attachment")
+  errorMessage String? @map("error_message") // Gemini 호출 실패 사유 (폴백 원인)
+  itemCount    Int?    @map("item_count")    // DOCUMENT 파싱에서 추출된 품목 수
+  parsedSnapshot Json  @map("parsed_snapshot") // AI 가 내놓은 원본 결과
+
+  // ---- 사람이 확정한 뒤 기록 (수정률) ---------------------------------
+  confirmedSnapshot Json?     @map("confirmed_snapshot")
+  confirmStage      String?   @map("confirm_stage") // REVIEW | PUBLISH
+  trackedCount      Int?      @map("tracked_count")
+  matchedCount      Int?      @map("matched_count")
+  correctedCount    Int?      @map("corrected_count")
+  missingCount      Int?      @map("missing_count")
+  correctionRate    Float?    @map("correction_rate")
+  accuracyRate      Float?    @map("accuracy_rate")
+  fieldDiffs        Json?     @map("field_diffs") // FieldDiff[] — 어떤 필드를 어떻게 고쳤는지
+  confirmedAt       DateTime? @map("confirmed_at")
+
+  draftId   String?  @map("draft_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([kind, createdAt])
+  @@index([confirmedAt])
+  @@map("ai_parse_log")
 }
 
 model QuoteDraftRevision {

@@ -19,7 +19,7 @@ import {
 import { SAMPLE_ORDER_PRESETS } from '../data/samplePresets';
 import { PRESET_ORDER_ENTITIES } from '../data/presetOrderEntities';
 import { AttachedFile, buildReviewItems } from './wizard/review/reviewModel';
-import { fetchValidated } from '../lib/api';
+import { fetchJson, fetchValidated } from '../lib/api';
 import { CalculationResponse, DraftListResponse, OrderEntityResponse } from '../schemas';
 import { getActiveDraftId, useQuoteDraft } from '../hooks/useQuoteDraft';
 
@@ -93,6 +93,13 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
     initialOrderEntity || DEFAULT_ORDER_ENTITY
   );
 
+  /**
+   * 이번 주문 정보를 만들어낸 AI 파싱 로그 id.
+   * 사람이 규격 검수를 마치거나 견적서를 발행할 때, 확정된 주문 정보를 이 id 로
+   * 되돌려 보내 "AI 결과 중 무엇을 고쳤는지"를 서버가 기록합니다.
+   */
+  const [parseLogId, setParseLogId] = useState<string | null>(null);
+
   // 규격 검수용 주방 구성 품목 (1·2단계 공유)
   const [reviewItems, setReviewItems] = useState<ReviewLineItem[]>(() =>
     buildReviewItems(initialOrderEntity || DEFAULT_ORDER_ENTITY)
@@ -118,6 +125,8 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
   const [booting, setBooting] = useState<boolean>(true);
   /** 초안 복원이 끝나기 전에는 자동 저장을 걸지 않는다 (복원값으로 덮어쓰는 것을 방지) */
   const hydratedRef = useRef<boolean>(false);
+  /** 마지막으로 저장(또는 복원)한 시점의 payload JSON 스냅샷. 변경 여부 판별에 사용한다. */
+  const lastSavedSnapshotRef = useRef<string>('');
   /** 진행 중인 다른 초안 안내 목록 */
   const [otherDrafts, setOtherDrafts] = useState<QuoteDraftSummary[]>([]);
   const [resumedNotice, setResumedNotice] = useState<string | null>(null);
@@ -140,8 +149,9 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
       calculationResult,
       quoteTitle,
       publishMeta,
+      parseLogId,
     }),
-    [step, promptText, attachedFiles, orderEntity, reviewItems, targetMarginRate, calculationResult, quoteTitle, publishMeta]
+    [step, promptText, attachedFiles, orderEntity, reviewItems, targetMarginRate, calculationResult, quoteTitle, publishMeta, parseLogId]
   );
 
   /** 서버에서 받은 초안 내용을 화면 상태로 되돌린다. */
@@ -156,8 +166,11 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
     setCalculationResult(payload.calculationResult ?? null);
     setQuoteTitle(payload.quoteTitle || DEFAULT_QUOTE_TITLE);
     setPublishMeta(payload.publishMeta ?? DEFAULT_PUBLISH_META);
+    setParseLogId(payload.parseLogId ?? null);
     setSavedQuote(null);
     setCalcDirty(false);
+    // 복원된 payload를 스냅샷에 기록하여, 직후 동일 내용 자동 저장을 방지한다.
+    lastSavedSnapshotRef.current = JSON.stringify(payload);
   }, []);
 
   /** 마법사 상태를 초기값으로 되돌린다 (새 견적 시작용). */
@@ -174,6 +187,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
     setPublishMeta(DEFAULT_PUBLISH_META);
     setSavedQuote(null);
     setPublishedVersions([]);
+    setParseLogId(null);
     setAiExtracted(false);
     setExtractionSuccessMsg(null);
     setCalcDirty(false);
@@ -195,6 +209,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
           setResumedNotice(
             `진행 중이던 초안을 이어서 작성합니다 (${STEP_LABELS[loaded.payload.step] ?? '자료 입력'} 단계, rev.${loaded.revision}).`
           );
+          // applyPayload에서 이미 스냅샷을 기록했으므로 복원 직후 동일 저장이 발생하지 않는다.
           hydratedRef.current = true;
           setBooting(false);
           onResumeHandled?.();
@@ -223,6 +238,8 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
         publishMeta: DEFAULT_PUBLISH_META,
       });
       if (cancelled) return;
+      // 새 초안 생성 직후 스냅샷을 기록하여 boot 직후 동일 내용 자동 저장을 방지한다.
+      lastSavedSnapshotRef.current = JSON.stringify(buildPayload());
       hydratedRef.current = true;
       setBooting(false);
       onResumeHandled?.();
@@ -239,7 +256,12 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
   // 입력 변경 감지 → 자동 저장 예약
   useEffect(() => {
     if (!hydratedRef.current || !draft.draftId) return;
-    draft.scheduleSave(buildPayload());
+    const payload = buildPayload();
+    const snapshot = JSON.stringify(payload);
+    // 실제 내용이 바뀌지 않았으면 저장을 건너뛴다.
+    if (snapshot === lastSavedSnapshotRef.current) return;
+    lastSavedSnapshotRef.current = snapshot;
+    draft.scheduleSave(payload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildPayload, draft.draftId]);
 
@@ -273,12 +295,13 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
       const data = await fetchValidated(OrderEntityResponse, '/api/gemini/parse-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptText }),
+        body: JSON.stringify({ prompt: promptText, draftId: draft.draftId ?? undefined }),
       });
       // 추출값을 기존 엔티티에 병합해 사용자가 이미 확인한 값이 지워지지 않도록 함
       const merged: OrderEntity = { ...orderEntity, ...data.data };
       setOrderEntity(merged);
       setReviewItems(buildReviewItems(merged));
+      setParseLogId(data.parseLogId ?? null);
       setAiExtracted(true);
       setExtractionSuccessMsg('AI 정보 추출이 완료되었습니다. 오른쪽 요약을 확인한 뒤 규격 검수로 이동하세요.');
     } catch (err: any) {
@@ -287,6 +310,28 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
       setAiParsingLoading(false);
     }
   };
+
+  /**
+   * 사람이 확정한 주문 정보를 파싱 로그에 되돌려 보낸다 (AI 수정률 집계용).
+   *
+   * 지표 수집은 견적 작성 흐름보다 항상 뒤에 있어야 하므로, 실패해도 화면에
+   * 알리지 않고 콘솔 경고만 남긴다. AI 추출을 쓰지 않은 건은 보낼 것이 없다.
+   */
+  const reportParseConfirmation = useCallback(
+    async (stage: 'REVIEW' | 'PUBLISH') => {
+      if (!parseLogId) return;
+      try {
+        await fetchJson(`/api/parse-logs/${parseLogId}/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderEntity, stage, draftId: draft.draftId ?? undefined }),
+        });
+      } catch (err: any) {
+        console.warn('AI 파싱 수정률 기록 실패 (견적 작성에는 영향 없음):', err.message);
+      }
+    },
+    [parseLogId, orderEntity, draft.draftId]
+  );
 
   // 백엔드 결정론적 원가 산출 엔진 호출 API
   const handleCalculate = async () => {
@@ -330,6 +375,8 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
     try {
       // 발행 직전 최신 상태를 초안에 확정 저장한다.
       await draft.saveNow(buildPayload(), '견적서 발행 직전 저장');
+      // 발행 시점 값이 최종 확정본이므로 수정률 기록을 이 값으로 갱신한다.
+      void reportParseConfirmation('PUBLISH');
 
       const rootQuote = publishedVersions[0] ?? null;
       const nextVersion = publishedVersions.length + 1;
@@ -540,6 +587,8 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
           lastSavedAt={draft.lastSavedAt}
           onPrevStep={() => setStep(1)}
           onNextStep={() => {
+            // 검수를 마친 시점의 값이 AI 결과에 대한 사람의 1차 판정이다.
+            void reportParseConfirmation('REVIEW');
             handleCalculate();
             setStep(3);
           }}

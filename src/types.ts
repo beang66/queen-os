@@ -217,6 +217,12 @@ export interface DraftPayload {
   calculationResult: QuoteCalculationResult | null;
   quoteTitle: string;
   publishMeta: QuotePublishMeta;
+  /**
+   * 이 초안의 주문 정보를 만들어낸 AI 파싱 로그 id.
+   * 초안을 나중에 이어서 작성해도 "AI 결과를 사람이 얼마나 고쳤는지"를
+   * 같은 로그에 이어 기록하기 위해 payload 에 함께 보관합니다.
+   */
+  parseLogId?: string | null;
 }
 
 /** 초안의 과거 저장 시점 (변경 이력 및 복구용) */
@@ -279,4 +285,92 @@ export interface DocumentExtractionResponse {
   rawTextSummary: string;
   extractedItems: ParsedPriceItem[];
   warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// AI 파싱 정확도 추적 (AI Parse Log)
+//
+// 파싱 1회마다 로그 한 건이 생기고, 사람이 규격 검수/발행 단계에서 값을 확정하면
+// 그 로그에 "무엇을 고쳤는지"가 덧씌워집니다. 수정률·미추출률이 여기서 나옵니다.
+// ---------------------------------------------------------------------------
+
+/** ORDER: 고객 주문 파싱 / DOCUMENT: 단가표·견적서 문서 파싱 */
+export type ParseLogKind = 'ORDER' | 'DOCUMENT';
+
+/** GEMINI: 모델 응답 / HEURISTIC: 모델 실패로 규칙 기반 폴백이 돈 경우 */
+export type ParseEngine = 'GEMINI' | 'HEURISTIC';
+
+/** 사람이 값을 확정한 시점 */
+export type ParseConfirmStage = 'REVIEW' | 'PUBLISH';
+
+/** 필드 한 건의 판정: 채택 / 수정 / AI 미추출 */
+export type ParseFieldVerdict = 'MATCHED' | 'CORRECTED' | 'MISSING';
+
+export interface ParseFieldDiff {
+  path: string;
+  label: string;
+  group: string;
+  verdict: ParseFieldVerdict;
+  parsed: unknown;
+  confirmed: unknown;
+}
+
+/** 필드 한 개의 누적 성적 */
+export interface ParseFieldStat {
+  path: string;
+  label: string;
+  group: string;
+  /** 이 필드가 판정 대상이 된 파싱 건수 */
+  observed: number;
+  corrected: number;
+  missing: number;
+  correctionRate: number;
+  missingRate: number;
+}
+
+/** 기간별 AI 파싱 정확도 집계 */
+export interface ParseAccuracyStats {
+  periodDays: number;
+  /** 사람이 확정까지 마쳐 지표에 반영된 파싱 건수 */
+  sampleCount: number;
+  trackedCount: number;
+  matchedCount: number;
+  correctedCount: number;
+  missingCount: number;
+  correctionRate: number;
+  accuracyRate: number;
+  /** 확정 여부와 무관한 전체 파싱 호출 수 */
+  totalParseCount: number;
+  fallbackCount: number;
+  fallbackRate: number;
+  pendingConfirmCount: number;
+  averageLatencyMs: number;
+  byEngine: Array<{
+    engine: string;
+    sampleCount: number;
+    correctionRate: number;
+    accuracyRate: number;
+  }>;
+  worstFields: ParseFieldStat[];
+}
+
+/** 파싱 이력 목록에 쓰는 경량 요약 (스냅샷 제외) */
+export interface AiParseLogSummary {
+  id: string;
+  kind: ParseLogKind;
+  engine: ParseEngine;
+  model: string;
+  latencyMs: number;
+  promptChars: number;
+  hasAttachment: boolean;
+  errorMessage?: string;
+  itemCount?: number;
+  confirmStage?: ParseConfirmStage;
+  trackedCount?: number;
+  correctedCount?: number;
+  missingCount?: number;
+  correctionRate?: number;
+  accuracyRate?: number;
+  confirmedAt?: string;
+  createdAt: string;
 }

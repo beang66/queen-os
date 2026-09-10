@@ -1,6 +1,31 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { DocumentExtractionResponse, LayoutType, OrderEntity } from '../src/types.js';
 
+/** 파싱에 실제로 쓰인 모델. 로그에 남겨 모델 교체 전후 정확도를 비교합니다. */
+const GEMINI_MODEL = 'gemini-3.7-flash';
+
+/**
+ * 파싱 1회에 대한 계측값.
+ *
+ * 결과 JSON 만 남기면 "이 값을 누가 만들었는지"를 알 수 없습니다. Gemini 가
+ * 실패해 규칙 기반 폴백이 돈 건과 진짜 모델 응답을 섞어 집계하면 정확도 지표가
+ * 무의미해지므로, 엔진 구분과 실패 사유를 함께 돌려줍니다.
+ */
+export interface ParseTelemetry {
+  engine: 'GEMINI' | 'HEURISTIC';
+  model: string;
+  latencyMs: number;
+  promptChars: number;
+  hasAttachment: boolean;
+  errorMessage?: string;
+}
+
+/** 파싱 결과 + 계측값 */
+export interface TracedParse<T> {
+  data: T;
+  telemetry: ParseTelemetry;
+}
+
 let aiClient: GoogleGenAI | null = null;
 
 function getAiClient(): GoogleGenAI {
@@ -362,8 +387,14 @@ export async function parseUnstructuredDocument(
   promptText: string,
   base64File?: string,
   mimeType?: string
-): Promise<DocumentExtractionResponse> {
+): Promise<TracedParse<DocumentExtractionResponse>> {
   const ai = getAiClient();
+  const startedAt = Date.now();
+  const baseTelemetry = {
+    model: GEMINI_MODEL,
+    promptChars: (promptText || '').length,
+    hasAttachment: Boolean(base64File && mimeType),
+  };
 
   const systemInstruction = `당신은 '퀸 주방가구'의 최고 원가/견적 데이터 엔지니어입니다.
 제공된 비정형 문서(수기 견적서 사진, 공급업체 원가표, 엑셀 텍스트, PDF 견적서, 자재 규격서 등)를 정밀 분석하여 표준화된 단가표 JSON 데이터로 변환하십시오.
@@ -455,13 +486,16 @@ export async function parseUnstructuredDocument(
         cleanJson = cleanJson.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
       const parsed = JSON.parse(cleanJson);
-      return parsed as DocumentExtractionResponse;
+      return {
+        data: parsed as DocumentExtractionResponse,
+        telemetry: { ...baseTelemetry, engine: 'GEMINI', latencyMs: Date.now() - startedAt },
+      };
     }
     throw new Error('Gemini did not return text');
   } catch (err: any) {
     console.error('Gemini parseUnstructuredDocument error:', err);
     // If API key missing or error, return structured extracted items if possible
-    return {
+    const fallback: DocumentExtractionResponse = {
       success: true,
       documentType: '자연어/이미지 원가 추출',
       rawTextSummary: promptText.slice(0, 150) || '업로드된 문서 분석 완료',
@@ -505,6 +539,15 @@ export async function parseUnstructuredDocument(
         },
       ],
     };
+    return {
+      data: fallback,
+      telemetry: {
+        ...baseTelemetry,
+        engine: 'HEURISTIC',
+        latencyMs: Date.now() - startedAt,
+        errorMessage: String(err?.message || err).slice(0, 300),
+      },
+    };
   }
 }
 
@@ -512,8 +555,14 @@ export async function parseCustomerOrder(
   promptText: string,
   base64Image?: string,
   mimeType?: string
-): Promise<OrderEntity> {
+): Promise<TracedParse<OrderEntity>> {
   const ai = getAiClient();
+  const startedAt = Date.now();
+  const baseTelemetry = {
+    model: GEMINI_MODEL,
+    promptChars: (promptText || '').length,
+    hasAttachment: Boolean(base64Image && mimeType),
+  };
 
   const systemInstruction = `당신은 '퀸 주방가구'의 최고 기술 견적 설계사입니다.
 고객 또는 인테리어 실장의 자연어 문의, 카톡 메시지, 실측 메모, 손도면 사진을 분석하여, 결정론적 견적 엔진에 전달할 정형화된 OrderEntity JSON을 정확하게 추출하십시오.
@@ -675,16 +724,23 @@ export async function parseCustomerOrder(
       }
       const parsed = JSON.parse(cleanJson);
       return {
-        ...parsed,
-        rawPrompt: promptText,
-      } as OrderEntity;
+        data: { ...parsed, rawPrompt: promptText } as OrderEntity,
+        telemetry: { ...baseTelemetry, engine: 'GEMINI', latencyMs: Date.now() - startedAt },
+      };
     }
     throw new Error('Gemini did not return order parsing text');
   } catch (err: any) {
     console.warn('Gemini API call returned error, applying intelligent heuristic NLP parser:', err.message);
     // Intelligent heuristic parsing guaranteed to extract exact customer note & dimensions
-    const extracted = extractOrderEntityHeuristically(promptText);
-    return extracted;
+    return {
+      data: extractOrderEntityHeuristically(promptText),
+      telemetry: {
+        ...baseTelemetry,
+        engine: 'HEURISTIC',
+        latencyMs: Date.now() - startedAt,
+        errorMessage: String(err?.message || err).slice(0, 300),
+      },
+    };
   }
 }
 

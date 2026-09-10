@@ -1,33 +1,32 @@
+/**
+ * 퀸 주방가구 견적/원가 자동화 시스템 백엔드 서버 진입점
+ *
+ * 역할:
+ * - Express 앱 초기화 및 전역 미들웨어 바인딩
+ * - 도메인별 API 라우터 마운트 (pricing, quotes, drafts, gemini)
+ * - 개발 환경 Vite 미들웨어 통합 (HMR 웹소켓 단일 포트 서빙)
+ * - 프로덕션 SPA 정적 파일 서빙
+ */
 import express from 'express';
 import http from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
-import { db } from './server/db.js';
-import { calculateDeterministicQuote } from './server/calculationEngine.js';
+
+import pricingRouter from './routes/pricing.js';
+import quotesRouter, { handleExportQuoteExcel } from './routes/quotes.js';
+import draftsRouter from './routes/drafts.js';
+import parseLogsRouter from './routes/parseLogs.js';
 import { parseCustomerOrder, parseUnstructuredDocument } from './server/geminiService.js';
-import { parseBody, parseQuery } from './server/validate.js';
-import {
-  CalculateQuoteSchema,
-  CreateDraftSchema,
-  DraftListQuerySchema,
-  PricingBulkSchema,
-  PricingItemInputSchema,
-  PricingItemUpdateSchema,
-  RestoreDraftSchema,
-  SaveDraftSchema,
-  SaveQuoteSchema,
-  UpdateQuoteSchema,
-} from './src/schemas.js';
-import * as XLSX from 'xlsx';
+import { db } from './server/db.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-// Multer memory storage for file uploads
+// 파일 업로드(도면/문서)용 Multer 메모리 스토리지
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
@@ -49,119 +48,16 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ----------------------------------------------------
-// 2. PRICING DB ENDPOINTS
+// 2. DOMAIN ROUTERS
 // ----------------------------------------------------
-app.get('/api/pricing', async (req, res) => {
-  try {
-    const { search, category } = req.query;
-    const items = await db.getPricingItems(search as string, category as string);
-    res.json({ success: true, count: items.length, data: items });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+app.use('/api/pricing', pricingRouter);
+app.use('/api/quotes', quotesRouter);
+app.use('/api/quote', quotesRouter); // /api/quote/calculate 하위 호환
+app.use('/api/drafts', draftsRouter);
+app.use('/api/parse-logs', parseLogsRouter);
 
-// 단가표 지문 — 초안에 기록된 값과 비교해 "단가가 바뀌었는지" 판별한다.
-// 주의: '/api/pricing/:id' 보다 먼저 선언해야 :id 로 잡히지 않는다.
-app.get('/api/pricing/fingerprint', async (_req, res) => {
-  res.json({ success: true, data: { fingerprint: await db.getPricingFingerprint() } });
-});
-
-app.get('/api/pricing/:id', async (req, res) => {
-  try {
-    const item = await db.getPricingItemById(req.params.id);
-    if (!item) {
-      return res.status(404).json({ success: false, error: '품목을 찾을 수 없습니다.' });
-    }
-    res.json({ success: true, data: item });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/pricing', async (req, res) => {
-  try {
-    const body = parseBody(PricingItemInputSchema, req, res);
-    if (!body) return;
-
-    const created = await db.addPricingItem({
-      code: body.code || `ITEM-${Date.now().toString().slice(-4)}`,
-      category: body.category || 'ACCESSORY',
-      name: body.name,
-      spec: body.spec || '',
-      material: body.material || '',
-      unit: body.unit,
-      costPrice: body.costPrice,
-      sellingPrice: body.sellingPrice,
-      supplier: body.supplier || '퀸 퍼니처',
-      stockStatus: body.stockStatus || 'INSTOCK',
-      notes: body.notes || '',
-    });
-    res.json({ success: true, data: created });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.put('/api/pricing/:id', async (req, res) => {
-  try {
-    const body = parseBody(PricingItemUpdateSchema, req, res);
-    if (!body) return;
-
-    const updated = await db.updatePricingItem(req.params.id, body);
-    if (!updated) {
-      return res.status(404).json({ success: false, error: '해당 품목을 찾을 수 없습니다.' });
-    }
-    res.json({ success: true, data: updated });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.delete('/api/pricing/:id', async (req, res) => {
-  try {
-    const success = await db.deletePricingItem(req.params.id);
-    res.json({ success });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/pricing/bulk', async (req, res) => {
-  try {
-    const body = parseBody(PricingBulkSchema, req, res);
-    if (!body) return;
-
-    const result = await db.bulkUpsertPricingItems(
-      body.items.map((i) => ({
-        code: i.code,
-        category: i.category || 'ACCESSORY',
-        name: i.name,
-        spec: i.spec || '',
-        material: i.material || '',
-        unit: i.unit,
-        costPrice: i.costPrice,
-        sellingPrice: i.sellingPrice,
-        supplier: i.supplier || '퀸 퍼니처',
-        stockStatus: i.stockStatus || 'INSTOCK',
-        notes: i.notes || '',
-      }))
-    );
-    const currentItems = await db.getPricingItems();
-    res.json({ success: true, ...result, currentTotal: currentItems.length });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/pricing/reset-seed', async (_req, res) => {
-  try {
-    const items = await db.resetPricingCatalog();
-    res.json({ success: true, message: '퀸 주방가구 표준 단가표 카탈로그로 초기화되었습니다.', count: items.length });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+// 기존 엑셀 다운로드 엔드포인트 호환
+app.post('/api/export/quote-excel', handleExportQuoteExcel);
 
 // ----------------------------------------------------
 // 3. GEMINI MULTIMODAL EXTRACTION ENDPOINTS
@@ -180,8 +76,22 @@ app.post('/api/gemini/parse-doc', upload.single('file'), async (req, res) => {
       mimeType = req.body.mimeType;
     }
 
-    const extraction = await parseUnstructuredDocument(promptText, base64File, mimeType);
-    res.json({ success: true, data: extraction });
+    const { data: extraction, telemetry } = await parseUnstructuredDocument(
+      promptText,
+      base64File,
+      mimeType
+    );
+
+    // 정확도 추적 로그. 문서 파싱은 품목 목록이라 필드 대조 대상이 아니므로
+    // 엔진·폴백 여부·추출 품목 수만 남깁니다.
+    const parseLogId = await db.createParseLog({
+      kind: 'DOCUMENT',
+      telemetry,
+      parsedSnapshot: extraction,
+      itemCount: extraction.extractedItems?.length ?? 0,
+    });
+
+    res.json({ success: true, data: extraction, parseLogId });
   } catch (err: any) {
     console.error('Document parsing endpoint error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -202,8 +112,22 @@ app.post('/api/gemini/parse-order', upload.single('image'), async (req, res) => 
       mimeType = req.body.mimeType;
     }
 
-    const orderEntity = await parseCustomerOrder(promptText, base64Image, mimeType);
-    res.json({ success: true, data: orderEntity });
+    const { data: orderEntity, telemetry } = await parseCustomerOrder(
+      promptText,
+      base64Image,
+      mimeType
+    );
+
+    // 파싱 시점 스냅샷을 남겨두고, 사람이 검수·발행 단계에서 확정한 값을
+    // /api/parse-logs/:id/confirm 으로 되돌려 받아 수정률을 계산합니다.
+    const parseLogId = await db.createParseLog({
+      kind: 'ORDER',
+      telemetry,
+      parsedSnapshot: orderEntity,
+      draftId: typeof req.body.draftId === 'string' ? req.body.draftId : undefined,
+    });
+
+    res.json({ success: true, data: orderEntity, parseLogId });
   } catch (err: any) {
     console.error('Order parsing endpoint error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -211,274 +135,7 @@ app.post('/api/gemini/parse-order', upload.single('image'), async (req, res) => 
 });
 
 // ----------------------------------------------------
-// 4. DETERMINISTIC QUOTE CALCULATION ENGINE
-// ----------------------------------------------------
-app.post('/api/quote/calculate', async (req, res) => {
-  try {
-    const body = parseBody(CalculateQuoteSchema, req, res);
-    if (!body) return;
-
-    const calculationResult = await calculateDeterministicQuote(body.orderEntity);
-
-    res.json({ success: true, data: calculationResult });
-  } catch (err: any) {
-    console.error('Calculation error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ----------------------------------------------------
-// 5. QUOTE DOCUMENT PERSISTENCE & AUDIT
-// ----------------------------------------------------
-app.get('/api/quotes', async (req, res) => {
-  try {
-    const { status, search } = req.query;
-    const quotes = await db.getQuotes(status as string, search as string);
-    res.json({ success: true, count: quotes.length, data: quotes });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/quotes/:id', async (req, res) => {
-  try {
-    const quote = await db.getQuoteById(req.params.id);
-    if (!quote) {
-      return res.status(404).json({ success: false, error: '견적서를 찾을 수 없습니다.' });
-    }
-    res.json({ success: true, data: quote });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/quotes', async (req, res) => {
-  try {
-    const body = parseBody(SaveQuoteSchema, req, res);
-    if (!body) return;
-
-    const { orderEntity, calculationResult, draftId } = body;
-
-    const saved = await db.saveQuote({
-      title: body.title || `${orderEntity.customerName} 고객님 주방가구 맞춤 견적서`,
-      status: body.status || 'ISSUED',
-      targetMarginRate: body.targetMarginRate ?? 28,
-      version: body.version ?? 1,
-      parentQuoteId: body.parentQuoteId || undefined,
-      publishMeta: body.publishMeta || undefined,
-      quoteNumber: body.quoteNumber || undefined,
-      orderEntity,
-      calculationResult,
-      notes: body.notes || '',
-      companyInfo: {
-        name: '퀸 주방가구 (Queen Kitchen)',
-        representative: '김대표',
-        bizNumber: '123-45-67890',
-        address: '경기도 남양주시 화도읍 가구공단로 88',
-        phone: '031-595-1234 / 010-8888-9999',
-        email: 'queenkitchen@furniture.kr',
-      },
-    });
-
-    // 초안에서 발행한 경우 초안을 PUBLISHED 로 전환하고 발행 문서를 연결한다.
-    if (draftId) {
-      await db.markDraftPublished(draftId, saved.id);
-    }
-
-    res.json({ success: true, data: saved });
-  } catch (err: any) {
-    console.error('Save quote error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.put('/api/quotes/:id', async (req, res) => {
-  try {
-    const body = parseBody(UpdateQuoteSchema, req, res);
-    if (!body) return;
-
-    const updated = await db.updateQuote(req.params.id, body);
-    if (!updated) {
-      return res.status(404).json({ success: false, error: '해당 견적서를 찾을 수 없습니다.' });
-    }
-    res.json({ success: true, data: updated });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.delete('/api/quotes/:id', async (req, res) => {
-  try {
-    const success = await db.deleteQuote(req.params.id);
-    res.json({ success });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ----------------------------------------------------
-// 6. QUOTE DRAFT (견적 초안) — 작성 중 데이터 유실 방지
-// ----------------------------------------------------
-app.post('/api/drafts', async (req, res) => {
-  try {
-    const body = parseBody(CreateDraftSchema, req, res);
-    if (!body) return;
-
-    const draft = await db.createDraft(body.payload, body.editorId || 'unknown');
-    res.json({ success: true, data: draft });
-  } catch (err: any) {
-    console.error('Create draft error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/drafts', async (req, res) => {
-  try {
-    const query = parseQuery(DraftListQuerySchema, req, res);
-    if (!query) return;
-
-    res.json({ success: true, data: await db.getDrafts(query.status) });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.get('/api/drafts/:id', async (req, res) => {
-  try {
-    const draft = await db.getDraftById(req.params.id);
-    if (!draft) {
-      return res.status(404).json({ success: false, error: '해당 초안을 찾을 수 없습니다.' });
-    }
-    const currentPricingFingerprint = await db.getPricingFingerprint();
-    res.json({
-      success: true,
-      data: draft,
-      // 초안 저장 당시의 단가표와 현재 단가표가 다른지 함께 알려준다.
-      meta: {
-        currentPricingFingerprint,
-        pricingChanged: !!draft.pricingFingerprint && draft.pricingFingerprint !== currentPricingFingerprint,
-      },
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.put('/api/drafts/:id', async (req, res) => {
-  try {
-    const body = parseBody(SaveDraftSchema, req, res);
-    if (!body) return;
-
-    const result = await db.saveDraft(req.params.id, {
-      revision: body.revision,
-      payload: body.payload,
-      label: body.label,
-      editorId: body.editorId || 'unknown',
-    });
-
-    if (result.status === 'OK') {
-      return res.json({ success: true, data: result.draft });
-    }
-    if (result.status === 'NOT_FOUND') {
-      return res.status(404).json({ success: false, error: '해당 초안을 찾을 수 없습니다.' });
-    }
-    // 다른 창에서 먼저 저장한 경우 — 덮어쓰지 않고 서버 최신본을 함께 돌려준다.
-    return res.status(409).json({
-      success: false,
-      error: '다른 창에서 이 초안을 먼저 수정했습니다.',
-      conflict: true,
-      data: result.current,
-    });
-  } catch (err: any) {
-    console.error('Save draft error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/drafts/:id/restore', async (req, res) => {
-  try {
-    const body = parseBody(RestoreDraftSchema, req, res);
-    if (!body) return;
-
-    const restored = await db.restoreDraftRevision(req.params.id, body.revision, body.editorId || 'unknown');
-    if (!restored) {
-      return res.status(404).json({ success: false, error: '해당 초안 또는 저장 시점을 찾을 수 없습니다.' });
-    }
-    res.json({ success: true, data: restored });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.delete('/api/drafts/:id', async (req, res) => {
-  try {
-    res.json({ success: await db.deleteDraft(req.params.id) });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ----------------------------------------------------
-// 7. EXCEL EXPORT ENDPOINT
-// ----------------------------------------------------
-app.post('/api/export/quote-excel', (req, res) => {
-  try {
-    const quote = req.body;
-    if (!quote || !quote.calculationResult) {
-      return res.status(400).json({ success: false, error: '유효한 견적서 데이터가 필요합니다.' });
-    }
-
-    const rows = [
-      ['퀸 주방가구 공종별 상세 견적서'],
-      ['견적번호', quote.quoteNumber || '임시견적', '발행일자', new Date().toLocaleDateString('ko-KR')],
-      ['고객명', quote.orderEntity?.customerName || '', '연락처', quote.orderEntity?.contact || ''],
-      ['현장주소', quote.orderEntity?.address || '', '가구형태', quote.orderEntity?.layoutType || ''],
-      [],
-      ['순번', '구분', '품목코드', '품목명 및 사양', '산식/규격', '단위', '수량', '제조원가(단가)', '제조원가(합계)', '공급단가', '공급가액(합계)', '마진율(%)'],
-    ];
-
-    quote.calculationResult.breakdowns.forEach((item: any, idx: number) => {
-      rows.push([
-        idx + 1,
-        item.category,
-        item.code,
-        item.name,
-        item.formula,
-        item.unit,
-        item.quantity,
-        item.costUnitPrice,
-        item.costTotal,
-        item.sellingUnitPrice,
-        item.sellingTotal,
-        `${item.marginRate}%`,
-      ]);
-    });
-
-    rows.push([]);
-    const summary = quote.calculationResult.summary;
-    rows.push(['', '', '', '총 제조원가 (VAT별도)', '', '', '', '', summary.totalManufacturingCost, '', '', '']);
-    rows.push(['', '', '', '총 공급가액 (VAT별도)', '', '', '', '', '', '', summary.totalSellingPrice, '']);
-    rows.push(['', '', '', '총 마진액 / 평균 마진율', '', '', '', '', summary.totalMarginAmount, '', '', `${summary.averageMarginRate}%`]);
-    rows.push(['', '', '', '부가가치세 (VAT 10%)', '', '', '', '', '', '', summary.vatAmount, '']);
-    rows.push(['', '', '', '최종 견적 총액 (VAT포함)', '', '', '', '', '', '', summary.finalGrandTotal, '']);
-
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '견적서_상세');
-
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-    res.setHeader('Content-Disposition', `attachment; filename="queen_quote_${quote.quoteNumber || 'draft'}.xlsx"`);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.send(buffer);
-  } catch (err: any) {
-    console.error('Excel export error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ----------------------------------------------------
-// 8. VITE MIDDLEWARE / STATIC ASSETS
+// 4. VITE MIDDLEWARE / STATIC ASSETS
 // ----------------------------------------------------
 async function startServer() {
   // Express 를 감싼 HTTP 서버를 직접 만든다. Vite HMR 웹소켓을 이 서버에 얹기 위함.
@@ -493,8 +150,6 @@ async function startServer() {
       server: {
         middlewareMode: true,
         // HMR 웹소켓을 별도 포트(:24678)가 아니라 이 HTTP 서버(:3000)에 얹는다.
-        // 별도 포트를 쓰면 개발 서버가 중복 실행됐을 때 서로 포트를 뺏고 뺏기며
-        // 브라우저의 HMR 소켓이 끊길 때마다 Vite 클라이언트가 페이지를 새로고침한다.
         hmr: { server: httpServer },
       },
       appType: 'spa',

@@ -9,6 +9,8 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "dev:no-open": "node scripts/dev.mjs --no-open",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
@@ -18,12 +20,14 @@
   "dependencies": {
     "@google/genai": "^2.21.0",
     "@prisma/client": "6.19.3",
+    "@tanstack/react-query": "^5.102.8",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "lucide-react": "^0.475.0",
     "multer": "^2.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.3",
     "tailwindcss": "^4.3.3",
     "xlsx": "^0.18.5",
     "zod": "4.6.1"
@@ -39,7 +43,8 @@
     "prisma": "6.19.3",
     "tsx": "^4.23.13",
     "typescript": "^5.3.3",
-    "vite": "^5.4.14"
+    "vite": "^5.4.14",
+    "vitest": "^2.1.9"
   },
   "browserslist": {
     "production": [

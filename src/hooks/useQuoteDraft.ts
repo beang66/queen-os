@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DraftPayload, QuoteDraft } from '../types';
 import { ApiError, NetworkError, fetchValidated } from '../lib/api';
 import { DraftResponse } from '../schemas';
+import { queryClient } from '../lib/queryClient';
+import { DRAFTS_QUERY_KEY } from './queries';
 
 /** 저장 상태 — 화면 우측 상단 뱃지에 그대로 표시된다. */
 export type SaveState = 'IDLE' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR' | 'CONFLICT';
@@ -169,6 +171,7 @@ export function useQuoteDraft(): UseQuoteDraftResult {
         setSaveState('SAVED');
         setConflictDraft(null);
         clearLocalBackup(id);
+        void queryClient.invalidateQueries({ queryKey: DRAFTS_QUERY_KEY });
         return true;
       } catch (err: any) {
         // 409 = 다른 창에서 먼저 저장함. 내 변경사항을 잃지 않도록 로컬에 백업해 둔다.
@@ -212,6 +215,7 @@ export function useQuoteDraft(): UseQuoteDraftResult {
         applyDraft(res.data);
         setSaveState('SAVED');
         setPricingChanged(false);
+        void queryClient.invalidateQueries({ queryKey: DRAFTS_QUERY_KEY });
         return res.data;
       } catch (err: any) {
         setSaveState('ERROR');

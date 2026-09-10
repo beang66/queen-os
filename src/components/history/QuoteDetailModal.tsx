@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, Printer, Building2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Printer, Building2, Link2, Check } from 'lucide-react';
 import { QuoteDocument } from '../../types';
 
 interface QuoteDetailModalProps {
@@ -11,7 +11,17 @@ interface QuoteDetailModalProps {
  * 저장된 견적서 상세 정보 팝업 모달 컴포넌트
  */
 export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({ quote, onClose }) => {
+  const [copied, setCopied] = useState<boolean>(false);
+
   if (!quote) return null;
+
+  const handleCopyLink = () => {
+    const shareUrl = `${window.location.origin}/quotes/${quote.id}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -23,6 +33,17 @@ export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({ quote, onClo
             <h3 className="text-base font-bold">{quote.title}</h3>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="text-slate-300 hover:text-white p-1.5 rounded hover:bg-slate-800 transition-colors text-xs flex items-center gap-1"
+              title="견적서 고유 URL 복사"
+            >
+              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
+              <span className={copied ? 'text-emerald-400 font-semibold' : ''}>
+                {copied ? '링크 복사됨' : '링크 복사'}
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => window.print()}

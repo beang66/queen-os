@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Archive, FileClock, History, Loader2, PlayCircle, RefreshCw, Trash2, Undo2 } from 'lucide-react';
-import { DraftStatus, QuoteDraft, QuoteDraftSummary } from '../../types';
-import { fetchJson, fetchValidated } from '../../lib/api';
-import { DraftListResponse, DraftResponse } from '../../schemas';
+import { DraftStatus, QuoteDraft } from '../../types';
+import { fetchValidated } from '../../lib/api';
+import { DraftResponse } from '../../schemas';
+import { useDrafts, useDeleteDraft, useRestoreDraft } from '../../hooks/queries';
 
 interface DraftListPanelProps {
   onResumeDraft: (id: string) => void;
@@ -37,36 +38,21 @@ const stamp = (iso: string) => new Date(iso).toLocaleString('ko-KR', { hour12: f
  */
 export const DraftListPanel: React.FC<DraftListPanelProps> = ({ onResumeDraft }) => {
   const [filter, setFilter] = useState<DraftStatus | 'ALL'>('ACTIVE');
-  const [drafts, setDrafts] = useState<QuoteDraftSummary[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: drafts = [], isLoading: loading, error: queryError, refetch } = useDrafts(filter);
+  const deleteDraftMutation = useDeleteDraft();
+  const restoreDraftMutation = useRestoreDraft();
+
+  const error = queryError ? (queryError as any).message : null;
+
   /** 변경 이력을 펼친 초안 */
   const [historyOf, setHistoryOf] = useState<QuoteDraft | null>(null);
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchValidated(DraftListResponse, `/api/drafts?status=${filter}`);
-      setDrafts(res.data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
   const handleDelete = async (id: string) => {
     if (!confirm('이 초안을 삭제할까요? 되돌릴 수 없습니다.')) return;
     try {
-      await fetchJson(`/api/drafts/${id}`, { method: 'DELETE' });
+      await deleteDraftMutation.mutateAsync(id);
       setHistoryOf((h) => (h?.id === id ? null : h));
-      await load();
     } catch (err: any) {
       alert(`초안 삭제 오류: ${err.message}`);
     }
@@ -91,13 +77,8 @@ export const DraftListPanel: React.FC<DraftListPanelProps> = ({ onResumeDraft })
   const handleRestore = async (id: string, revision: number) => {
     if (!confirm(`rev.${revision} 시점의 내용으로 되돌릴까요? 현재 내용도 이력에 남습니다.`)) return;
     try {
-      await fetchJson(`/api/drafts/${id}/restore`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ revision }),
-      });
+      await restoreDraftMutation.mutateAsync({ id, revision });
       setHistoryOf(null);
-      await load();
       alert(`rev.${revision} 상태로 복구했습니다. [이어서 작성]으로 확인하세요.`);
     } catch (err: any) {
       alert(`복구 오류: ${err.message}`);
@@ -130,7 +111,7 @@ export const DraftListPanel: React.FC<DraftListPanelProps> = ({ onResumeDraft })
           ))}
           <button
             type="button"
-            onClick={() => void load()}
+            onClick={() => void refetch()}
             className="text-gray-400 hover:text-blue-600 p-1.5 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors"
             title="새로고침"
           >

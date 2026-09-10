@@ -1,27 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Header } from './components/Header';
 import { QuoteWizard } from './components/QuoteWizard';
 import { PricingDbManager } from './components/PricingDbManager';
 import { QuoteHistoryAudit } from './components/QuoteHistoryAudit';
 import { SystemDiagram } from './components/SystemDiagram';
+import { ParseAccuracyDashboard } from './components/ParseAccuracyDashboard';
 import { ToastNotification } from './components/common/ToastNotification';
 import { ParsedPriceItem, PricingItem, QuoteDocument, QuoteStatus } from './types';
-import { fetchJson, fetchValidated } from './lib/api';
+import { queryClient } from './lib/queryClient';
 import {
-  PricingListResponse,
-  QuoteListResponse,
-  QuoteResponse,
-} from './schemas';
+  usePricingItems,
+  useAddPricingItem,
+  useUpdatePricingItem,
+  useDeletePricingItem,
+  useBulkPricingItems,
+  useResetPricingSeed,
+  useQuotes,
+  useSaveQuote,
+  useUpdateQuote,
+  useDeleteQuote,
+  QUOTES_QUERY_KEY,
+} from './hooks/queries';
 
 /**
  * 퀸 주방가구 스마트 견적 & 원가 자동화 시스템 (Queen-OS) 메인 앱 컴포넌트
+ *
+ * 라우팅 및 상태 관리:
+ * - React Router 기반 URL 네비게이션 (새로고침 시 탭 유지, 뒤로가기/앞으로가기 지원)
+ * - 로고 클릭 시 메인페이지(/) 이동
+ * - 특정 견적서 공유 링크 지원 (/quotes/:id)
+ * - TanStack Query 기반 API 캐싱 & 낙관적 업데이트
  */
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'wizard' | 'pricing' | 'history' | 'architecture'>('wizard');
-  // 견적 관리에서 "이어서 작성"을 누른 초안 id (신규 견적 탭으로 전달)
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
-  const [pricingItems, setPricingItems] = useState<PricingItem[]>([]);
-  const [quotes, setQuotes] = useState<QuoteDocument[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -31,68 +45,52 @@ export default function App() {
     }, 4000);
   };
 
-  // 단가표 DB 데이터 조회 API
-  const fetchPricingItems = async () => {
-    try {
-      const data = await fetchValidated(PricingListResponse, '/api/pricing');
-      setPricingItems(data.data);
-    } catch (err) {
-      console.error('Failed to fetch pricing items:', err);
-    }
-  };
+  // ---------------------------------------------------------------------------
+  // 1. TanStack Query 데이터 페칭 (캐시 및 실시간 동기화)
+  // ---------------------------------------------------------------------------
+  const { data: pricingItems = [] } = usePricingItems();
+  const { data: quotes = [] } = useQuotes();
 
-  // 발행된 견적서 이력 조회 API
-  const fetchQuotes = async () => {
-    try {
-      const data = await fetchValidated(QuoteListResponse, '/api/quotes');
-      setQuotes(data.data);
-    } catch (err) {
-      console.error('Failed to fetch quotes:', err);
-    }
-  };
+  // 단가표 관련 뮤테이션
+  const addPricingItemMutation = useAddPricingItem();
+  const updatePricingItemMutation = useUpdatePricingItem();
+  const deletePricingItemMutation = useDeletePricingItem();
+  const bulkPricingMutation = useBulkPricingItems();
+  const resetSeedMutation = useResetPricingSeed();
 
-  useEffect(() => {
-    const init = async () => {
-      await Promise.all([fetchPricingItems(), fetchQuotes()]);
-    };
-    init();
-  }, []);
+  // 견적서 관련 뮤테이션
+  const saveQuoteMutation = useSaveQuote();
+  const updateQuoteMutation = useUpdateQuote();
+  const deleteQuoteMutation = useDeleteQuote();
+
+  // ---------------------------------------------------------------------------
+  // 2. 이벤트 핸들러
+  // ---------------------------------------------------------------------------
 
   // 단가 품목 신규 등록
   const handleAddPricingItem = async (item: Omit<PricingItem, 'id' | 'updatedAt'>) => {
     try {
-      await fetchJson('/api/pricing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(item),
-      });
-      await fetchPricingItems();
+      await addPricingItemMutation.mutateAsync(item);
       showToast(`'${item.name}' 품목이 단가표에 등록되었습니다.`);
     } catch (err: any) {
       alert(`단가 등록 오류: ${err.message}`);
     }
   };
 
-  // 단가 품목 수정
+  // 단가 품목 수정 (낙관적 업데이트)
   const handleUpdatePricingItem = async (id: string, updates: Partial<PricingItem>) => {
     try {
-      await fetchJson(`/api/pricing/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      await fetchPricingItems();
+      await updatePricingItemMutation.mutateAsync({ id, updates });
       showToast('단가 정보가 성공적으로 수정되었습니다.');
     } catch (err: any) {
       alert(`단가 수정 오류: ${err.message}`);
     }
   };
 
-  // 단가 품목 삭제
+  // 단가 품목 삭제 (낙관적 삭제)
   const handleDeletePricingItem = async (id: string) => {
     try {
-      await fetchJson(`/api/pricing/${id}`, { method: 'DELETE' });
-      await fetchPricingItems();
+      await deletePricingItemMutation.mutateAsync(id);
       showToast('단가 품목이 삭제되었습니다.');
     } catch (err: any) {
       alert(`삭제 오류: ${err.message}`);
@@ -112,16 +110,11 @@ export default function App() {
         costPrice: i.costPrice || 0,
         sellingPrice: i.sellingPrice || 0,
         supplier: i.supplier || '퀸 퍼니처',
-        stockStatus: 'INSTOCK',
+        stockStatus: 'INSTOCK' as const,
         notes: 'AI 문서 파싱 일괄 등록',
       }));
 
-      await fetchJson('/api/pricing/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: formattedItems }),
-      });
-      await fetchPricingItems();
+      await bulkPricingMutation.mutateAsync(formattedItems);
       showToast(`총 ${items.length}개 품목이 단가표 DB에 성공적으로 적재되었습니다.`);
     } catch (err: any) {
       alert(`일괄 저장 오류: ${err.message}`);
@@ -132,57 +125,34 @@ export default function App() {
   const handleResetSeed = async () => {
     if (!confirm('퀸 주방가구 표준 단가표 카탈로그(기본 품목)로 초기화하시겠습니까?')) return;
     try {
-      await fetchJson('/api/pricing/reset-seed', { method: 'POST' });
-      await fetchPricingItems();
+      await resetSeedMutation.mutateAsync();
       showToast('퀸 주방가구 표준 단가표 카탈로그로 초기화되었습니다.');
     } catch (err: any) {
       alert(`초기화 오류: ${err.message}`);
     }
   };
 
-  // 영구 견적서 저장
-  const handleSaveQuote = async (payload: {
-    title: string;
-    targetMarginRate: number;
-    orderEntity: any;
-    calculationResult: any;
-    notes?: string;
-    quoteNumber?: string;
-    version?: number;
-    parentQuoteId?: string;
-    publishMeta?: any;
-    draftId?: string;
-  }): Promise<QuoteDocument> => {
-    const data = await fetchValidated(QuoteResponse, '/api/quotes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    await fetchQuotes();
-    showToast(`견적서 #${data.data.quoteNumber}가 발행/저장되었습니다.`);
-    return data.data;
+  // 영구 견적서 저장 및 발행
+  const handleSaveQuote = async (payload: any): Promise<QuoteDocument> => {
+    const res = await saveQuoteMutation.mutateAsync(payload);
+    showToast(`견적서 #${res.data.quoteNumber}가 발행/저장되었습니다.`);
+    return res.data;
   };
 
   // 견적서 이력 상태 변경
   const handleUpdateQuoteStatus = async (id: string, status: QuoteStatus) => {
     try {
-      await fetchJson(`/api/quotes/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
-      await fetchQuotes();
+      await updateQuoteMutation.mutateAsync({ id, updates: { status } });
       showToast('견적 진행 상태가 업데이트되었습니다.');
     } catch (err: any) {
       alert(`상태 변경 오류: ${err.message}`);
     }
   };
 
-  // 견적서 삭제
+  // 견적서 삭제 (낙관적 삭제)
   const handleDeleteQuote = async (id: string) => {
     try {
-      await fetchJson(`/api/quotes/${id}`, { method: 'DELETE' });
-      await fetchQuotes();
+      await deleteQuoteMutation.mutateAsync(id);
       showToast('견적서가 삭제되었습니다.');
     } catch (err: any) {
       alert(`견적서 삭제 오류: ${err.message}`);
@@ -194,51 +164,93 @@ export default function App() {
       {/* Toast Notification */}
       <ToastNotification message={toastMessage} />
 
-      {/* Global Header */}
+      {/* Global Header — 로고 클릭 시 '/' 이동 및 NavLink 탭 동기화 */}
       <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
         pricingCount={pricingItems.length}
         quotesCount={quotes.length}
       />
 
-      {/* Main Content Area */}
+      {/* Main Content Area — React Router Routes */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 lg:px-6 py-4">
-        {activeTab === 'wizard' && (
-          <QuoteWizard
-            pricingItems={pricingItems}
-            onSaveQuote={handleSaveQuote}
-            onNavigateToHistory={() => setActiveTab('history')}
-            resumeDraftId={resumeDraftId}
-            onResumeHandled={() => setResumeDraftId(null)}
+        <Routes>
+          {/* 1. 신규 견적 작성 (메인) */}
+          <Route
+            path="/"
+            element={
+              <QuoteWizard
+                pricingItems={pricingItems}
+                onSaveQuote={handleSaveQuote}
+                onNavigateToHistory={() => navigate('/history')}
+                resumeDraftId={resumeDraftId || searchParams.get('draftId')}
+                onResumeHandled={() => {
+                  setResumeDraftId(null);
+                  if (searchParams.get('draftId')) {
+                    setSearchParams({});
+                  }
+                }}
+              />
+            }
           />
-        )}
+          <Route path="/wizard" element={<Navigate to="/" replace />} />
 
-        {activeTab === 'pricing' && (
-          <PricingDbManager
-            items={pricingItems}
-            onAddItem={handleAddPricingItem}
-            onUpdateItem={handleUpdatePricingItem}
-            onDeleteItem={handleDeletePricingItem}
-            onResetSeed={handleResetSeed}
-            onApplyBulkItems={handleApplyToPricingDb}
+          {/* 2. 단가표 관리 */}
+          <Route
+            path="/pricing"
+            element={
+              <PricingDbManager
+                items={pricingItems}
+                onAddItem={handleAddPricingItem}
+                onUpdateItem={handleUpdatePricingItem}
+                onDeleteItem={handleDeletePricingItem}
+                onResetSeed={handleResetSeed}
+                onApplyBulkItems={handleApplyToPricingDb}
+              />
+            }
           />
-        )}
 
-        {activeTab === 'history' && (
-          <QuoteHistoryAudit
-            quotes={quotes}
-            onRefresh={fetchQuotes}
-            onUpdateStatus={handleUpdateQuoteStatus}
-            onDeleteQuote={handleDeleteQuote}
-            onResumeDraft={(id) => {
-              setResumeDraftId(id);
-              setActiveTab('wizard');
-            }}
+          {/* 3. 견적 관리 및 견적서 공유 링크 (/quotes/:id) */}
+          <Route
+            path="/history"
+            element={
+              <QuoteHistoryAudit
+                quotes={quotes}
+                onRefresh={async () => {
+                  await queryClient.invalidateQueries({ queryKey: QUOTES_QUERY_KEY });
+                }}
+                onUpdateStatus={handleUpdateQuoteStatus}
+                onDeleteQuote={handleDeleteQuote}
+                onResumeDraft={(id) => {
+                  navigate(`/?draftId=${id}`);
+                }}
+              />
+            }
           />
-        )}
+          <Route
+            path="/quotes/:id"
+            element={
+              <QuoteHistoryAudit
+                quotes={quotes}
+                onRefresh={async () => {
+                  await queryClient.invalidateQueries({ queryKey: QUOTES_QUERY_KEY });
+                }}
+                onUpdateStatus={handleUpdateQuoteStatus}
+                onDeleteQuote={handleDeleteQuote}
+                onResumeDraft={(id) => {
+                  navigate(`/?draftId=${id}`);
+                }}
+              />
+            }
+          />
 
-        {activeTab === 'architecture' && <SystemDiagram />}
+          {/* 4. AI 파싱 정확도 대시보드 */}
+          <Route path="/ai-accuracy" element={<ParseAccuracyDashboard />} />
+
+          {/* 5. 시스템 아키텍처 다이어그램 */}
+          <Route path="/architecture" element={<SystemDiagram />} />
+
+          {/* 6. Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
 
       {/* Footer */}

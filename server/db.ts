@@ -2,9 +2,12 @@ import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import type { Draft as DraftRow, Quote as QuoteRow, QuoteDraftRevision as RevisionRow, PricingItem as PricingRow } from '@prisma/client';
 import {
+  AiParseLogSummary,
   DraftPayload,
   DraftStatus,
   OrderEntity,
+  ParseEngine,
+  ParseLogKind,
   PricingItem,
   QuoteCalculationResult,
   QuoteDocument,
@@ -13,6 +16,14 @@ import {
   QuotePublishMeta,
 } from '../src/types.js';
 import { DEFAULT_PRICING_CATALOG } from './defaultCatalog.js';
+import {
+  FieldDiff,
+  ParseAccuracyStats,
+  ParseDiffResult,
+  diffOrderEntity,
+  summarizeParseLogs,
+} from './parseAccuracy.js';
+import type { ParseTelemetry } from './geminiService.js';
 
 const prisma = new PrismaClient();
 
@@ -507,6 +518,187 @@ class PrismaStore {
       console.log(`[초안 정리] 보관 전환 ${archived}건, 영구 삭제 ${purged}건`);
     }
     return { archived, purged };
+  }
+
+  // ---------------------------------------------------------------------
+  // AI 파싱 정확도 로그 (AI PARSE LOG)
+  //
+  // 파싱할 때 한 행을 만들고, 사람이 값을 확정하면 같은 행에 수정 내역을
+  // 덧씌웁니다. 확정 전 행은 통계 분모에서 빠집니다.
+  // ---------------------------------------------------------------------
+
+  /**
+   * 파싱 시점 기록. 실패해도 절대 파싱 응답을 막지 않습니다(로그는 부가 기능).
+   * 마이그레이션 전이면 테이블이 없어 실패하므로 그 경우도 조용히 넘깁니다.
+   */
+  public async createParseLog(input: {
+    kind: ParseLogKind;
+    telemetry: ParseTelemetry;
+    parsedSnapshot: unknown;
+    itemCount?: number;
+    draftId?: string;
+  }): Promise<string | null> {
+    try {
+      const row = await prisma.aiParseLog.create({
+        data: {
+          kind: input.kind,
+          engine: input.telemetry.engine,
+          model: input.telemetry.model,
+          latencyMs: input.telemetry.latencyMs,
+          promptChars: input.telemetry.promptChars,
+          hasAttachment: input.telemetry.hasAttachment,
+          errorMessage: input.telemetry.errorMessage ?? null,
+          itemCount: input.itemCount ?? null,
+          parsedSnapshot: (input.parsedSnapshot ?? {}) as any,
+          draftId: input.draftId ?? null,
+        },
+        select: { id: true },
+      });
+      return row.id;
+    } catch (err: any) {
+      console.warn('[AI 파싱 로그] 기록 실패 (파싱 응답에는 영향 없음):', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * 사람이 확정한 값을 받아 필드별 수정 내역을 계산해 덧씌웁니다.
+   * 같은 로그를 여러 번 확정할 수 있으며(검수 단계 → 발행 단계), 최신 값이 남습니다.
+   */
+  public async confirmParseLog(
+    id: string,
+    confirmed: OrderEntity,
+    stage: 'REVIEW' | 'PUBLISH',
+    draftId?: string
+  ): Promise<ParseDiffResult | null> {
+    const row = await prisma.aiParseLog.findUnique({ where: { id } });
+    if (!row) return null;
+
+    const diff = diffOrderEntity(row.parsedSnapshot as unknown as OrderEntity, confirmed);
+
+    await prisma.aiParseLog.update({
+      where: { id },
+      data: {
+        confirmedSnapshot: confirmed as any,
+        confirmStage: stage,
+        trackedCount: diff.trackedCount,
+        matchedCount: diff.matchedCount,
+        correctedCount: diff.correctedCount,
+        missingCount: diff.missingCount,
+        correctionRate: diff.correctionRate,
+        accuracyRate: diff.accuracyRate,
+        fieldDiffs: diff.diffs as any,
+        confirmedAt: new Date(),
+        draftId: draftId ?? row.draftId,
+      },
+    });
+
+    return diff;
+  }
+
+  /** 최근 파싱 이력 (확정 여부 무관) — 폴백 빈도·지연시간 점검용 */
+  public async getParseLogs(limit = 50, kind?: ParseLogKind): Promise<AiParseLogSummary[]> {
+    const rows = await prisma.aiParseLog.findMany({
+      where: kind ? { kind } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 200),
+      select: {
+        id: true,
+        kind: true,
+        engine: true,
+        model: true,
+        latencyMs: true,
+        promptChars: true,
+        hasAttachment: true,
+        errorMessage: true,
+        itemCount: true,
+        confirmStage: true,
+        trackedCount: true,
+        correctedCount: true,
+        missingCount: true,
+        correctionRate: true,
+        accuracyRate: true,
+        confirmedAt: true,
+        createdAt: true,
+      },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind as ParseLogKind,
+      engine: r.engine as ParseEngine,
+      model: r.model,
+      latencyMs: r.latencyMs,
+      promptChars: r.promptChars,
+      hasAttachment: r.hasAttachment,
+      errorMessage: r.errorMessage ?? undefined,
+      itemCount: r.itemCount ?? undefined,
+      confirmStage: (r.confirmStage as AiParseLogSummary['confirmStage']) ?? undefined,
+      trackedCount: r.trackedCount ?? undefined,
+      correctedCount: r.correctedCount ?? undefined,
+      missingCount: r.missingCount ?? undefined,
+      correctionRate: r.correctionRate ?? undefined,
+      accuracyRate: r.accuracyRate ?? undefined,
+      confirmedAt: r.confirmedAt ? r.confirmedAt.toISOString() : undefined,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * 기간 내 확정된 주문 파싱 로그를 모아 수정률 지표를 냅니다.
+   * 폴백 비율은 확정 여부와 무관하게 전체 파싱 건수 기준으로 셉니다.
+   */
+  public async getParseAccuracyStats(days = 30): Promise<ParseAccuracyStats & {
+    periodDays: number;
+    totalParseCount: number;
+    fallbackCount: number;
+    fallbackRate: number;
+    pendingConfirmCount: number;
+    averageLatencyMs: number;
+  }> {
+    const since = new Date(Date.now() - days * 86_400_000);
+    const scope = { kind: 'ORDER' as const, createdAt: { gte: since } };
+
+    const all = await prisma.aiParseLog.findMany({
+      where: scope,
+      select: { engine: true, latencyMs: true, confirmedAt: true },
+    });
+
+    const confirmed = await prisma.aiParseLog.findMany({
+      where: { ...scope, confirmedAt: { not: null } },
+      select: {
+        engine: true,
+        trackedCount: true,
+        matchedCount: true,
+        correctedCount: true,
+        missingCount: true,
+        fieldDiffs: true,
+      },
+    });
+
+    const stats = summarizeParseLogs(
+      confirmed.map((r) => ({
+        engine: r.engine,
+        trackedCount: r.trackedCount ?? 0,
+        matchedCount: r.matchedCount ?? 0,
+        correctedCount: r.correctedCount ?? 0,
+        missingCount: r.missingCount ?? 0,
+        diffs: (r.fieldDiffs as unknown as FieldDiff[]) ?? [],
+      }))
+    );
+
+    const fallbackCount = all.filter((r) => r.engine !== 'GEMINI').length;
+    const totalLatency = all.reduce((sum, r) => sum + r.latencyMs, 0);
+
+    return {
+      ...stats,
+      periodDays: days,
+      totalParseCount: all.length,
+      fallbackCount,
+      fallbackRate: all.length === 0 ? 0 : Math.round((fallbackCount / all.length) * 1000) / 1000,
+      pendingConfirmCount: all.filter((r) => !r.confirmedAt).length,
+      averageLatencyMs: all.length === 0 ? 0 : Math.round(totalLatency / all.length),
+    };
   }
 }
 

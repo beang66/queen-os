@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { QuoteHistoryFilter } from './history/QuoteHistoryFilter';
 import { QuoteHistoryTable } from './history/QuoteHistoryTable';
 import { QuoteDetailModal } from './history/QuoteDetailModal';
@@ -24,9 +25,23 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
   onDeleteQuote,
   onResumeDraft,
 }) => {
+  const navigate = useNavigate();
+  const { id: quoteUrlId } = useParams<{ id?: string }>();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'ALL'>('ALL');
   const [selectedQuote, setSelectedQuote] = useState<QuoteDocument | null>(null);
+
+  // URL 에 :id 가 있는 경우 해당 견적서를 자동으로 선택하여 모달 열기
+  useEffect(() => {
+    if (quoteUrlId) {
+      const match = quotes.find((q) => q.id === quoteUrlId || q.quoteNumber === quoteUrlId);
+      if (match) {
+        setSelectedQuote(match);
+      }
+    } else {
+      setSelectedQuote(null);
+    }
+  }, [quoteUrlId, quotes]);
 
   // 검색 및 상태 필터링된 견적서 이력
   const filteredQuotes = useMemo(() => {
@@ -61,7 +76,10 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
       {/* 2. 견적서 이력 테이블 */}
       <QuoteHistoryTable
         quotes={filteredQuotes}
-        onSelectQuote={(quote) => setSelectedQuote(quote)}
+        onSelectQuote={(quote) => {
+          setSelectedQuote(quote);
+          navigate(`/quotes/${quote.id}`);
+        }}
         onUpdateStatus={onUpdateStatus}
         onDeleteQuote={onDeleteQuote}
       />
@@ -69,7 +87,10 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
       {/* 3. 견적서 상세 정보 팝업 모달 */}
       <QuoteDetailModal
         quote={selectedQuote}
-        onClose={() => setSelectedQuote(null)}
+        onClose={() => {
+          setSelectedQuote(null);
+          navigate('/history');
+        }}
       />
     </div>
   );

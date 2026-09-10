@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type {
+  AiParseLogSummary,
   DraftPayload,
+  ParseAccuracyStats,
   OrderEntity,
   PricingItem,
   QuoteCalculationResult,
@@ -304,6 +306,7 @@ export const DraftPayloadSchema = z.object({
   calculationResult: QuoteCalculationResultSchema.nullable(),
   quoteTitle: z.string(),
   publishMeta: QuotePublishMetaSchema,
+  parseLogId: z.string().nullable().optional(),
 });
 
 export const CreateDraftSchema = z.object({
@@ -416,6 +419,106 @@ export const QuoteDraftSummarySchema = z.object({
   publishedQuoteIds: z.array(z.string()),
 });
 
+// ---------------------------------------------------------------------------
+// AI 파싱 정확도 추적 (Parse Log)
+// ---------------------------------------------------------------------------
+
+export const ParseLogKindSchema = z.enum(['ORDER', 'DOCUMENT']);
+export const ParseEngineSchema = z.enum(['GEMINI', 'HEURISTIC']);
+export const ParseConfirmStageSchema = z.enum(['REVIEW', 'PUBLISH']);
+export const ParseFieldVerdictSchema = z.enum(['MATCHED', 'CORRECTED', 'MISSING']);
+
+/** 사람이 확정한 주문 정보 제출. 이 값과 AI 결과의 차이가 곧 수정률입니다. */
+export const ConfirmParseLogSchema = z.object({
+  orderEntity: OrderEntitySchema,
+  stage: ParseConfirmStageSchema,
+  draftId: z.string().optional(),
+});
+
+export const ParseLogListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  kind: ParseLogKindSchema.optional(),
+});
+
+export const ParseLogStatsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).default(30),
+});
+
+export const ParseFieldDiffSchema = z.object({
+  path: z.string(),
+  label: z.string(),
+  group: z.string(),
+  verdict: ParseFieldVerdictSchema,
+  parsed: z.unknown(),
+  confirmed: z.unknown(),
+});
+
+export const ParseDiffResultSchema = z.object({
+  trackedCount: z.number(),
+  matchedCount: z.number(),
+  correctedCount: z.number(),
+  missingCount: z.number(),
+  correctionRate: z.number(),
+  accuracyRate: z.number(),
+  diffs: z.array(ParseFieldDiffSchema),
+});
+
+export const AiParseLogSummarySchema = z.object({
+  id: z.string(),
+  kind: ParseLogKindSchema,
+  engine: ParseEngineSchema,
+  model: z.string(),
+  latencyMs: z.number(),
+  promptChars: z.number(),
+  hasAttachment: z.boolean(),
+  errorMessage: z.string().optional(),
+  itemCount: z.number().optional(),
+  confirmStage: ParseConfirmStageSchema.optional(),
+  trackedCount: z.number().optional(),
+  correctedCount: z.number().optional(),
+  missingCount: z.number().optional(),
+  correctionRate: z.number().optional(),
+  accuracyRate: z.number().optional(),
+  confirmedAt: z.string().optional(),
+  createdAt: z.string(),
+});
+
+export const ParseAccuracyStatsSchema = z.object({
+  periodDays: z.number(),
+  sampleCount: z.number(),
+  trackedCount: z.number(),
+  matchedCount: z.number(),
+  correctedCount: z.number(),
+  missingCount: z.number(),
+  correctionRate: z.number(),
+  accuracyRate: z.number(),
+  totalParseCount: z.number(),
+  fallbackCount: z.number(),
+  fallbackRate: z.number(),
+  pendingConfirmCount: z.number(),
+  averageLatencyMs: z.number(),
+  byEngine: z.array(
+    z.object({
+      engine: z.string(),
+      sampleCount: z.number(),
+      correctionRate: z.number(),
+      accuracyRate: z.number(),
+    })
+  ),
+  worstFields: z.array(
+    z.object({
+      path: z.string(),
+      label: z.string(),
+      group: z.string(),
+      observed: z.number(),
+      corrected: z.number(),
+      missing: z.number(),
+      correctionRate: z.number(),
+      missingRate: z.number(),
+    })
+  ),
+});
+
 /** 모든 성공 응답은 `{ success: true, data }` 봉투에 담겨 옵니다. */
 const envelope = <T extends z.ZodType>(data: T) =>
   z.object({ success: z.literal(true), data });
@@ -430,7 +533,19 @@ export const QuoteListResponse = envelope(z.array(QuoteDocumentSchema)).extend({
 });
 export const QuoteResponse = envelope(QuoteDocumentSchema);
 export const CalculationResponse = envelope(QuoteCalculationResultSchema);
-export const OrderEntityResponse = envelope(OrderEntitySchema);
+/** 파싱 응답에는 정확도 추적용 로그 id 가 함께 옵니다 (로그 기록 실패 시 생략). */
+export const OrderEntityResponse = envelope(OrderEntitySchema).extend({
+  parseLogId: z.string().nullable().optional(),
+});
+export const ParseLogListResponse = envelope(z.array(AiParseLogSummarySchema)).extend({
+  count: z.number().optional(),
+});
+export const ParseAccuracyStatsResponse = envelope(ParseAccuracyStatsSchema);
+export const ConfirmParseLogResponse = z.object({
+  success: z.literal(true),
+  data: ParseDiffResultSchema.nullable(),
+  skipped: z.string().optional(),
+});
 export const DraftListResponse = envelope(z.array(QuoteDraftSummarySchema));
 export const DraftResponse = envelope(QuoteDraftSchema).extend({
   meta: z
@@ -461,3 +576,11 @@ export type _CalculationResultMatches = AssertAssignable<
   z.infer<typeof QuoteCalculationResultSchema>
 >;
 export type _DraftPayloadMatches = AssertAssignable<DraftPayload, z.infer<typeof DraftPayloadSchema>>;
+export type _AiParseLogSummaryMatches = AssertAssignable<
+  AiParseLogSummary,
+  z.infer<typeof AiParseLogSummarySchema>
+>;
+export type _ParseAccuracyStatsMatches = AssertAssignable<
+  ParseAccuracyStats,
+  z.infer<typeof ParseAccuracyStatsSchema>
+>;
