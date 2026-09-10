@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="4468fb90-c1e6-4a72-bd0f-d9568fda78d9" name="변경" comment="머지" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="bruce" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "bruce2294"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/beang66/queen-os-0907.git",
+    "accountId": "6fa0d2cf-416e-4c01-920c-b011791857ec"
+  }
+}]]></component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.3486935266231506" />
+      <entry key="MS500" value="3.3660503618422677" />
+      <entry key="S2" value="6.197331774860702" />
+      <entry key="S5" value="9.034598203860837" />
+      <entry key="S10" value="10.986225396585988" />
+      <entry key="S30" value="12.842062090974649" />
+      <entry key="S60" value="13.39908231271845" />
+      <entry key="M2" value="13.693819182188783" />
+      <entry key="M5" value="13.876123124604627" />
+      <entry key="M10" value="13.937824812019345" />
+      <entry key="M15" value="13.958497064637388" />
+      <entry key="M30" value="13.97922207739509" />
+      <entry key="H1" value="13.989604415592469" />
+      <entry key="H2" value="13.994800550846668" />
+      <entry key="H4" value="13.997399861039183" />
+      <entry key="D1" value="13.999566585940716" />
+      <entry key="W1" value="13.999938082295882" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="0.0" />
+      <entry key="M15" value="0.0" />
+      <entry key="M30" value="0.0" />
+      <entry key="H1" value="0.0" />
+      <entry key="H2" value="0.0" />
+      <entry key="H4" value="0.0" />
+      <entry key="D1" value="0.0" />
+      <entry key="W1" value="0.0" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.2378287649963235" />
+      <entry key="MS500" value="3.3173294986748285" />
+      <entry key="S2" value="6.175748367491668" />
+      <entry key="S5" value="9.021100625994867" />
+      <entry key="S10" value="10.977533253694666" />
+      <entry key="S30" value="12.83849971493899" />
+      <entry key="S60" value="13.397197425304263" />
+      <entry key="M2" value="13.692848972458682" />
+      <entry key="M5" value="13.875728126760643" />
+      <entry key="M10" value="13.937626139298265" />
+      <entry key="M15" value="13.958364353698702" />
+      <entry key="M30" value="13.979155590291086" />
+      <entry key="H1" value="13.989571139055531" />
+      <entry key="H2" value="13.994783904322412" />
+      <entry key="H4" value="13.997391535711913" />
+      <entry key="D1" value="13.999565198099244" />
+      <entry key="W1" value="13.999937884025789" />
+    </decayedShown>
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 7,
+  "fromUser": false
+}]]></component>
+  <component name="ProjectId" id="3J7kdAfeFss2leG41IWcfDUYfGH" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "main",
+    "git.auto.fetch.suggestion.counter": "1",
+    "nodejs_package_manager_path": "npm"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-821f704e66d9-5bd6d13a2a75-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-262.9437.214" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="디폴트 작업">
+      <changelist id="4468fb90-c1e6-4a72-bd0f-d9568fda78d9" name="변경" comment="" />
+      <created>1789019578828</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1789019578828</updated>
+    </task>
+    <task id="LOCAL-00001" summary="머지">
+      <option name="closed" value="true" />
+      <created>1789019666466</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1789019666466</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="머지" />
+    <option name="LAST_COMMIT_MESSAGE" value="머지" />
+  </component>
+</project>
