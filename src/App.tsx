@@ -34,18 +34,11 @@ import {
  * - 특정 견적서 공유 링크 지원 (/quotes/:id)
  * - TanStack Query 기반 API 캐싱 & 낙관적 업데이트
  */
-export default function App() {
-  const { user, loading } = useAuth();
+function MainApp() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // 세션 확인 중 — 로그인 화면이 깜빡이지 않도록 빈 화면을 보여줍니다.
-  if (loading) return null;
-
-  // 비로그인 상태이면 로그인 페이지로
-  if (!user) return <LoginPage />;
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -279,4 +272,26 @@ export default function App() {
       </footer>
     </div>
   );
+}
+
+/**
+ * 전역 인증 게이트웨이 컴포넌트
+ */
+export default function App() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#1e293b] flex flex-col items-center justify-center text-white p-4">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm font-medium text-gray-300">세션을 확인하는 중입니다...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return <MainApp />;
 }
