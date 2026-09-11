@@ -42,23 +42,32 @@ function verifyPassword(plain, stored) {
 
 // ── Prisma Client 로드 ────────────────────────────────────────────────────────
 const { PrismaClient } = await import('@prisma/client');
+const targetEmail = (process.argv[2] || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const newPassword = process.argv[3] || process.env.ADMIN_PASSWORD || '';
+
+if (!targetEmail || !newPassword) {
+  console.log('사용법: node scripts/fix-admin.mjs <관리자이메일> <새비밀번호>');
+  console.log('예시  : node scripts/fix-admin.mjs admin@queen.com MySecurePass1234!');
+  process.exit(1);
+}
+
 const prisma = new PrismaClient();
 
 console.log('🔌 DB 연결 중...\n');
 
 // ── 현재 관리자 계정 조회 ────────────────────────────────────────────────────
 const row = await prisma.user.findUnique({
-  where: { email: 'admin@queen.com' },
+  where: { email: targetEmail },
 });
 
 if (!row) {
-  console.log('❌ admin@queen.com 계정이 존재하지 않습니다.');
+  console.log(`❌ ${targetEmail} 계정이 존재하지 않습니다.`);
   console.log('→ 새 관리자 계정을 생성합니다...\n');
 
-  const newHash = hashPassword('Admin1234!');
+  const newHash = hashPassword(newPassword);
   await prisma.user.create({
     data: {
-      email: 'admin@queen.com',
+      email: targetEmail,
       name: '관리자',
       role: 'ADMIN',
       passwordHash: newHash,
@@ -67,8 +76,7 @@ if (!row) {
     },
   });
   console.log('✅ 관리자 계정 생성 완료!');
-  console.log('   이메일: admin@queen.com');
-  console.log('   비밀번호: Admin1234!');
+  console.log(`   이메일: ${targetEmail}`);
 } else {
   console.log('📋 현재 계정 상태:');
   console.log(`   ID: ${row.id}`);
@@ -79,28 +87,19 @@ if (!row) {
   console.log(`   비밀번호 변경 필요: ${row.mustChangePassword}`);
   console.log(`   password_hash 형식: ${row.passwordHash?.startsWith('scrypt$') ? '✅ scrypt 형식 정상' : '❌ 형식 이상 → ' + String(row.passwordHash).substring(0, 30)}`);
 
-  // 현재 비밀번호로 검증 시도
-  const ok = verifyPassword('Admin1234!', row.passwordHash);
-  console.log(`   비밀번호 'Admin1234!' 검증: ${ok ? '✅ 일치' : '❌ 불일치'}\n`);
-
-  if (!ok || row.status !== 'ACTIVE' || row.mustChangePassword) {
-    console.log('→ 비밀번호를 재설정하고 계정 상태를 정상화합니다...');
-    const newHash = hashPassword('Admin1234!');
-    await prisma.user.update({
-      where: { email: 'admin@queen.com' },
-      data: {
-        passwordHash: newHash,
-        status: 'ACTIVE',
-        mustChangePassword: false,
-      },
-    });
-    console.log('✅ 비밀번호 재설정 완료!');
-    console.log('   이메일: admin@queen.com');
-    console.log('   비밀번호: Admin1234!');
-  } else {
-    console.log('✅ 계정 상태 이상 없음 — 로그인이 여전히 안 되면 서버 로그를 확인하세요.');
-  }
+  console.log('\n→ 비밀번호를 재설정하고 계정 상태를 정상화합니다...');
+  const newHash = hashPassword(newPassword);
+  await prisma.user.update({
+    where: { email: targetEmail },
+    data: {
+      passwordHash: newHash,
+      status: 'ACTIVE',
+      mustChangePassword: false,
+    },
+  });
+  console.log('✅ 비밀번호 재설정 완료!');
+  console.log(`   이메일: ${targetEmail}`);
 }
 
 await prisma.$disconnect();
-console.log('\n완료! 이제 admin@queen.com / Admin1234! 로 로그인해 보세요.');
+console.log('\n완료! 설정한 이메일과 비밀번호로 로그인해 보세요.');

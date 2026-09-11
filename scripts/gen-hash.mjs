@@ -2,7 +2,12 @@
 import crypto from 'crypto';
 
 const SCRYPT_KEYLEN = 64;
-const plain = process.argv[2] || 'Admin1234!';
+const plain = process.argv[2];
+
+if (!plain) {
+  console.error('사용법: node scripts/gen-hash.mjs <비밀번호>');
+  process.exit(1);
+}
 
 const salt = crypto.randomBytes(16);
 const derived = crypto.scryptSync(plain.normalize('NFKC'), salt, SCRYPT_KEYLEN);
