@@ -12,9 +12,17 @@ try {
   console.error(err.message);
   process.exit(1);
 }
-import type { Draft as DraftRow, Quote as QuoteRow, QuoteDraftRevision as RevisionRow, PricingItem as PricingRow } from '@prisma/client';
+import type {
+  Draft as DraftRow,
+  Quote as QuoteRow,
+  QuoteDraftRevision as RevisionRow,
+  PricingItem as PricingRow,
+  User as UserRow,
+} from '@prisma/client';
 import {
   AiParseLogSummary,
+  AppUser,
+  AuthUser,
   DraftPayload,
   DraftStatus,
   OrderEntity,
@@ -26,6 +34,8 @@ import {
   QuoteDraft,
   QuoteDraftSummary,
   QuotePublishMeta,
+  UserRole,
+  UserStatus,
 } from '../src/types.js';
 import { DEFAULT_PRICING_CATALOG } from './defaultCatalog.js';
 import {
@@ -36,6 +46,7 @@ import {
   summarizeParseLogs,
 } from './parseAccuracy.js';
 import type { ParseTelemetry } from './geminiService.js';
+import { generateInitialPassword, hashPassword, verifyPassword } from './auth.js';
 
 const prisma = new PrismaClient();
 
@@ -90,6 +101,25 @@ export function describeDbError(err: any): string {
 // (저장 형식(테이블·컬럼)과 API가 주고받는 모양을 분리해두면, 나중에 스키마를
 //  바꿔도 서버 라우트는 손댈 필요가 없다.)
 // ---------------------------------------------------------------------------
+
+/**
+ * 계정이 없을 때도 있을 때와 비슷한 시간이 걸리게 하려고 한 번 대조해보는 더미 해시.
+ * (사용자 열거 공격 방지 — 어떤 비밀번호와도 일치하지 않습니다.)
+ */
+const DUMMY_PASSWORD_HASH = hashPassword(crypto.randomBytes(32).toString('hex'));
+
+function toAppUser(row: UserRow): AppUser {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role as UserRole,
+    status: row.status as UserStatus,
+    mustChangePassword: row.mustChangePassword,
+    lastLoginAt: row.lastLoginAt ? row.lastLoginAt.toISOString() : undefined,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
 
 function toPricingItem(row: PricingRow): PricingItem {
   return {
@@ -181,6 +211,9 @@ class PrismaStore {
     // 서버 기동 시 1회, 오래된 초안 보관·폐기 정책을 실행한다.
     this.runDraftRetention().catch((err) => console.error('초안 보관 정책 실행 실패:', err));
     this.initCatalogIfNeeded().catch((err) => console.error('단가표 초기화 실패:', err));
+    // 계정 생성은 관리자만 할 수 있으므로, 최초 1회는 시스템이 관리자를 만들어준다.
+    this.ensureBootstrapAdmin().catch((err) => console.error('첫 관리자 계정 확인 실패:', err));
+    this.purgeExpiredSessions().catch(() => undefined);
   }
 
   private async initCatalogIfNeeded() {
@@ -557,6 +590,203 @@ class PrismaStore {
       console.log(`[초안 정리] 보관 전환 ${archived}건, 영구 삭제 ${purged}건`);
     }
     return { archived, purged };
+  }
+
+  // ---------------------------------------------------------------------
+  // 사용자 · 세션 (USERS & SESSIONS)
+  // ---------------------------------------------------------------------
+
+  /**
+   * 사용자가 한 명도 없으면 첫 관리자 계정을 만든다.
+   *
+   * 계정 생성 경로가 "관리자만"이므로, 최초 1회는 시스템이 만들어줘야 합니다.
+   * 초기 비밀번호는 콘솔에 한 번만 찍히고 DB 에는 해시만 남습니다.
+   */
+  public async ensureBootstrapAdmin(): Promise<void> {
+    try {
+      if ((await prisma.user.count()) > 0) return;
+
+      const email = (process.env.ADMIN_EMAIL || 'admin@queenkitchen.kr').toLowerCase();
+      const password = process.env.ADMIN_PASSWORD || generateInitialPassword();
+
+      await prisma.user.create({
+        data: {
+          email,
+          name: '시스템 관리자',
+          role: 'ADMIN',
+          passwordHash: hashPassword(password),
+          // .env 로 지정한 비밀번호라면 이미 관리자가 정한 값이므로 변경을 강요하지 않는다.
+          mustChangePassword: !process.env.ADMIN_PASSWORD,
+        },
+      });
+
+      console.log('\n──────────── 첫 관리자 계정을 생성했습니다 ────────────');
+      console.log(`  이메일   : ${email}`);
+      if (!process.env.ADMIN_PASSWORD) {
+        console.log(`  비밀번호 : ${password}   ← 이 값은 다시 표시되지 않습니다`);
+        console.log('  첫 로그인 후 비밀번호를 변경해야 합니다.');
+      } else {
+        console.log('  비밀번호 : .env 의 ADMIN_PASSWORD 값');
+      }
+      console.log('────────────────────────────────────────────────────\n');
+    } catch (err: any) {
+      console.error('첫 관리자 계정 생성 실패:', err.message);
+    }
+  }
+
+  public async getUsers(): Promise<AppUser[]> {
+    const rows = await prisma.user.findMany({ orderBy: [{ role: 'asc' }, { createdAt: 'asc' }] });
+    return rows.map(toAppUser);
+  }
+
+  public async getUserById(id: string): Promise<AppUser | null> {
+    const row = await prisma.user.findUnique({ where: { id } });
+    return row ? toAppUser(row) : null;
+  }
+
+  /**
+   * 이메일·비밀번호 검증.
+   *
+   * 계정이 없을 때도 존재하는 계정과 비슷한 시간이 걸리도록 더미 해시를 한 번
+   * 계산합니다. 응답 시간 차이로 가입 여부를 알아내는 걸 막기 위함입니다.
+   */
+  public async verifyCredentials(
+    email: string,
+    password: string
+  ): Promise<{ status: 'OK'; user: AppUser } | { status: 'INVALID' } | { status: 'DISABLED' }> {
+    const row = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+
+    if (!row) {
+      verifyPassword(password, DUMMY_PASSWORD_HASH);
+      return { status: 'INVALID' };
+    }
+    if (!verifyPassword(password, row.passwordHash)) return { status: 'INVALID' };
+    if (row.status !== 'ACTIVE') return { status: 'DISABLED' };
+
+    return { status: 'OK', user: toAppUser(row) };
+  }
+
+  public async createUser(input: {
+    email: string;
+    name: string;
+    role: UserRole;
+    password: string;
+  }): Promise<AppUser> {
+    const row = await prisma.user.create({
+      data: {
+        email: input.email.toLowerCase().trim(),
+        name: input.name.trim(),
+        role: input.role,
+        passwordHash: hashPassword(input.password),
+        mustChangePassword: true,
+      },
+    });
+    return toAppUser(row);
+  }
+
+  /** 이름·등급·상태 변경. 비활성으로 바뀌면 그 사용자의 세션을 모두 끊는다. */
+  public async updateUser(
+    id: string,
+    updates: { name?: string; role?: UserRole; status?: UserStatus }
+  ): Promise<AppUser | null> {
+    try {
+      const row = await prisma.user.update({
+        where: { id },
+        data: {
+          ...(updates.name !== undefined ? { name: updates.name.trim() } : {}),
+          ...(updates.role !== undefined ? { role: updates.role } : {}),
+          ...(updates.status !== undefined ? { status: updates.status } : {}),
+        },
+      });
+      if (updates.status === 'DISABLED') {
+        await prisma.session.deleteMany({ where: { userId: id } });
+      }
+      return toAppUser(row);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 비밀번호 교체.
+   * 기존 세션을 모두 끊어, 비밀번호가 샜더라도 그 세션으로는 더 못 들어오게 합니다.
+   * (지금 쓰는 창은 호출부에서 새 세션을 발급해 이어갑니다.)
+   */
+  public async setPassword(
+    id: string,
+    password: string,
+    opts: { mustChange: boolean }
+  ): Promise<boolean> {
+    try {
+      await prisma.user.update({
+        where: { id },
+        data: { passwordHash: hashPassword(password), mustChangePassword: opts.mustChange },
+      });
+      await prisma.session.deleteMany({ where: { userId: id } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  public async deleteUser(id: string): Promise<boolean> {
+    try {
+      await prisma.user.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 활성 관리자 수 — 마지막 관리자를 지우거나 강등하는 것을 막는 데 씁니다. */
+  public async countActiveAdmins(excludeUserId?: string): Promise<number> {
+    return prisma.user.count({
+      where: {
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      },
+    });
+  }
+
+  public async createSession(userId: string, tokenHash: string, expiresAt: Date, userAgent?: string) {
+    await prisma.session.create({
+      data: { userId, tokenHash, expiresAt, userAgent: userAgent?.slice(0, 200) ?? null },
+    });
+    await prisma.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } });
+  }
+
+  /**
+   * 세션 토큰 해시로 사용자를 찾는다.
+   * 만료됐거나 비활성 계정이면 세션을 지우고 null 을 돌려줍니다.
+   */
+  public async getUserBySessionToken(tokenHash: string): Promise<AuthUser | null> {
+    const session = await prisma.session.findUnique({ where: { tokenHash }, include: { user: true } });
+    if (!session) return null;
+
+    if (session.expiresAt.getTime() < Date.now() || session.user.status !== 'ACTIVE') {
+      await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
+      return null;
+    }
+
+    const user = toAppUser(session.user);
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword,
+    };
+  }
+
+  public async deleteSession(tokenHash: string): Promise<void> {
+    await prisma.session.deleteMany({ where: { tokenHash } });
+  }
+
+  /** 만료된 세션 청소 (기동 시 1회) */
+  public async purgeExpiredSessions(): Promise<number> {
+    const result = await prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    return result.count;
   }
 
   // ---------------------------------------------------------------------

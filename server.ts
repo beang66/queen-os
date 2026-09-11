@@ -21,6 +21,16 @@ import pricingRouter from './routes/pricing.js';
 import quotesRouter, { handleExportQuoteExcel } from './routes/quotes.js';
 import draftsRouter from './routes/drafts.js';
 import parseLogsRouter from './routes/parseLogs.js';
+import authRouter from './routes/auth.js';
+import usersRouter from './routes/users.js';
+import {
+  SESSION_COOKIE,
+  denyWrites,
+  hashSessionToken,
+  readCookie,
+  requireAuth,
+  requireRole,
+} from './server/auth.js';
 import { parseCustomerOrder, parseUnstructuredDocument } from './server/geminiService.js';
 import { db } from './server/db.js';
 
@@ -49,21 +59,53 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ----------------------------------------------------
-// 2. DOMAIN ROUTERS
+// 2. 세션 인식 (모든 /api 요청)
+//
+// 쿠키의 세션 토큰으로 사용자를 찾아 req.user 에 실어둔다. 여기서는 막지 않고,
+// 실제 차단은 아래 라우터별 requireAuth/requireRole 이 담당한다. 그래야
+// /api/auth/me 처럼 "비로그인도 200 으로 답해야 하는" 경로가 자연스럽다.
 // ----------------------------------------------------
-app.use('/api/pricing', pricingRouter);
-app.use('/api/quotes', quotesRouter);
-app.use('/api/quote', quotesRouter); // /api/quote/calculate 하위 호환
-app.use('/api/drafts', draftsRouter);
-app.use('/api/parse-logs', parseLogsRouter);
+app.use('/api', async (req, _res, next) => {
+  try {
+    const token = readCookie(req, SESSION_COOKIE);
+    if (token) {
+      req.user = (await db.getUserBySessionToken(hashSessionToken(token))) ?? undefined;
+    }
+  } catch (err: any) {
+    // 세션 조회 실패로 API 전체를 막지는 않는다. 비로그인으로 취급되어 401 이 난다.
+    console.error('세션 확인 실패:', err.message);
+  }
+  next();
+});
+
+app.use('/api/auth', authRouter);
+
+// ----------------------------------------------------
+// 3. DOMAIN ROUTERS (로그인 필수)
+//
+// 화면에서 메뉴를 감추는 것만으로는 권한이 되지 않는다. API 가 열려 있으면
+// 주소를 직접 부르면 그만이므로, 차단은 여기서 한다.
+// ----------------------------------------------------
+app.use('/api/users', requireAuth, usersRouter); // 라우터 내부에서 다시 ADMIN 검사
+
+// 단가표: 조회는 로그인한 모두, 수정은 관리자만 (원가 정보의 원본이므로)
+app.use('/api/pricing', requireAuth, (req, res, next) => {
+  if (req.method === 'GET') return next();
+  return requireRole('ADMIN')(req, res, next);
+}, pricingRouter);
+
+app.use('/api/quotes', requireAuth, denyWrites, quotesRouter);
+app.use('/api/quote', requireAuth, denyWrites, quotesRouter); // /api/quote/calculate 하위 호환
+app.use('/api/drafts', requireAuth, denyWrites, draftsRouter);
+app.use('/api/parse-logs', requireAuth, parseLogsRouter);
 
 // 기존 엑셀 다운로드 엔드포인트 호환
-app.post('/api/export/quote-excel', handleExportQuoteExcel);
+app.post('/api/export/quote-excel', requireAuth, handleExportQuoteExcel);
 
 // ----------------------------------------------------
 // 3. GEMINI MULTIMODAL EXTRACTION ENDPOINTS
 // ----------------------------------------------------
-app.post('/api/gemini/parse-doc', upload.single('file'), async (req, res) => {
+app.post('/api/gemini/parse-doc', requireAuth, denyWrites, upload.single('file'), async (req, res) => {
   try {
     const promptText = req.body.prompt || '';
     let base64File: string | undefined;
@@ -99,7 +141,7 @@ app.post('/api/gemini/parse-doc', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/api/gemini/parse-order', upload.single('image'), async (req, res) => {
+app.post('/api/gemini/parse-order', requireAuth, denyWrites, upload.single('image'), async (req, res) => {
   try {
     const promptText = req.body.prompt || '';
     let base64Image: string | undefined;

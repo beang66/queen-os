@@ -27,7 +27,8 @@ router.post('/', async (req, res) => {
     const body = parseBody(CreateDraftSchema, req, res);
     if (!body) return;
 
-    const draft = await db.createDraft(body.payload, body.editorId || 'unknown');
+    // 작성자는 클라이언트가 보낸 값이 아니라 세션에서 가져온다 (위조 방지).
+    const draft = await db.createDraft(body.payload, req.user!.id);
     res.json({ success: true, data: draft });
   } catch (err: any) {
     console.error('Create draft error:', err);

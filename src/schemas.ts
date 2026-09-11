@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type {
   AiParseLogSummary,
+  AppUser,
   DraftPayload,
   ParseAccuracyStats,
   OrderEntity,
@@ -519,6 +520,57 @@ export const ParseAccuracyStatsSchema = z.object({
   ),
 });
 
+// ---------------------------------------------------------------------------
+// 사용자 · 인증
+// ---------------------------------------------------------------------------
+
+export const UserRoleSchema = z.enum(['ADMIN', 'ESTIMATOR', 'VIEWER']);
+export const UserStatusSchema = z.enum(['ACTIVE', 'DISABLED']);
+
+const email = z
+  .string()
+  .trim()
+  .min(1, '이메일을 입력해주세요.')
+  .email('이메일 형식이 올바르지 않습니다.');
+
+export const LoginSchema = z.object({
+  email,
+  password: z.string().min(1, '비밀번호를 입력해주세요.'),
+});
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, '현재 비밀번호를 입력해주세요.'),
+  newPassword: z.string().min(8, '새 비밀번호는 8자 이상이어야 합니다.'),
+});
+
+/** 계정 생성. 초기 비밀번호는 서버가 만들어 1회만 돌려줍니다. */
+export const CreateUserSchema = z.object({
+  email,
+  name: z.string().trim().min(1, '이름을 입력해주세요.').max(40),
+  role: UserRoleSchema,
+});
+
+/** 계정 수정 — 보낸 항목만 반영합니다. 이메일은 계정 식별자라 바꾸지 않습니다. */
+export const UpdateUserSchema = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
+  role: UserRoleSchema.optional(),
+  status: UserStatusSchema.optional(),
+});
+
+export const AuthUserSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string(),
+  role: UserRoleSchema,
+  mustChangePassword: z.boolean(),
+});
+
+export const AppUserSchema = AuthUserSchema.extend({
+  status: UserStatusSchema,
+  lastLoginAt: z.string().optional(),
+  createdAt: z.string(),
+});
+
 /** 모든 성공 응답은 `{ success: true, data }` 봉투에 담겨 옵니다. */
 const envelope = <T extends z.ZodType>(data: T) =>
   z.object({ success: z.literal(true), data });
@@ -557,6 +609,20 @@ export const DraftResponse = envelope(QuoteDraftSchema).extend({
 });
 export const SuccessResponse = z.object({ success: z.boolean() });
 
+export const AuthUserResponse = envelope(AuthUserSchema);
+/** 비로그인 상태에서는 data 가 null 입니다. */
+export const SessionResponse = z.object({
+  success: z.literal(true),
+  data: AuthUserSchema.nullable(),
+});
+export const UserListResponse = envelope(z.array(AppUserSchema)).extend({
+  count: z.number().optional(),
+});
+/** 계정 생성·비밀번호 초기화 응답 — 초기 비밀번호는 이때 한 번만 내려옵니다. */
+export const UserWithPasswordResponse = envelope(AppUserSchema).extend({
+  initialPassword: z.string(),
+});
+
 // ---------------------------------------------------------------------------
 // 스키마 ↔ 도메인 타입 대조
 //
@@ -584,3 +650,4 @@ export type _ParseAccuracyStatsMatches = AssertAssignable<
   ParseAccuracyStats,
   z.infer<typeof ParseAccuracyStatsSchema>
 >;
+export type _AppUserMatches = AssertAssignable<AppUser, z.infer<typeof AppUserSchema>>;

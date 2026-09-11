@@ -9,6 +9,44 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/// 시스템 사용자. 계정은 관리자만 만들 수 있고, 자유 가입 경로는 없습니다.
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  name         String
+  /// ADMIN(관리자) | ESTIMATOR(견적담당) | VIEWER(조회전용)
+  role         String  @default("ESTIMATOR")
+  /// scrypt 해시. 원문 비밀번호는 어디에도 저장하지 않습니다.
+  passwordHash String  @map("password_hash")
+  /// ACTIVE | DISABLED — 비활성 계정은 로그인도, 기존 세션 유지도 되지 않습니다.
+  status       String  @default("ACTIVE")
+  /// 관리자가 만든 초기 비밀번호를 아직 안 바꿨는지
+  mustChangePassword Boolean @default(true) @map("must_change_password")
+  lastLoginAt  DateTime? @map("last_login_at")
+
+  sessions  Session[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("app_user")
+}
+
+/// 로그인 세션. 쿠키에는 원문 토큰이, DB 에는 그 해시만 저장됩니다.
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique @map("token_hash")
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("app_session")
+}
+
 model PricingItem {
   id           String   @id @default(cuid())
   code         String   @unique

@@ -315,6 +315,36 @@ export interface ParseFieldDiff {
   confirmed: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// 사용자 · 인증
+// ---------------------------------------------------------------------------
+
+/**
+ * ADMIN     : 전체 기능 + 사용자·단가표 관리
+ * ESTIMATOR : 견적 작성·발행, 원가 열람 가능. 단가표 수정 불가
+ * VIEWER    : 발행된 견적서 열람만. 원가·마진은 보이지 않음
+ */
+export type UserRole = 'ADMIN' | 'ESTIMATOR' | 'VIEWER';
+
+export type UserStatus = 'ACTIVE' | 'DISABLED';
+
+/** 로그인한 사용자 (화면·요청 컨텍스트에서 쓰는 최소 정보) */
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  /** 관리자가 발급한 초기 비밀번호를 아직 바꾸지 않은 상태 */
+  mustChangePassword: boolean;
+}
+
+/** 사용자 관리 화면에서 쓰는 계정 정보 (비밀번호 해시는 절대 나가지 않습니다) */
+export interface AppUser extends AuthUser {
+  status: UserStatus;
+  lastLoginAt?: string;
+  createdAt: string;
+}
+
 /** 필드 한 개의 누적 성적 */
 export interface ParseFieldStat {
   path: string;

@@ -19,6 +19,7 @@ import {
   PricingItemInputSchema,
   PricingItemUpdateSchema,
 } from '../src/schemas.js';
+import { hidesCost, stripPricingCost } from '../server/sanitize.js';
 
 const router = Router();
 
@@ -27,7 +28,8 @@ router.get('/', async (req, res) => {
   try {
     const { search, category } = req.query;
     const items = await db.getPricingItems(search as string, category as string);
-    res.json({ success: true, count: items.length, data: items });
+    const visible = hidesCost(req.user?.role) ? items.map(stripPricingCost) : items;
+    res.json({ success: true, count: visible.length, data: visible });
   } catch (err: any) {
     res.status(500).json({ success: false, error: describeDbError(err) });
   }
@@ -50,7 +52,7 @@ router.get('/:id', async (req, res) => {
     if (!item) {
       return res.status(404).json({ success: false, error: '품목을 찾을 수 없습니다.' });
     }
-    res.json({ success: true, data: item });
+    res.json({ success: true, data: hidesCost(req.user?.role) ? stripPricingCost(item) : item });
   } catch (err: any) {
     res.status(500).json({ success: false, error: describeDbError(err) });
   }

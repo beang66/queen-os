@@ -19,6 +19,7 @@ import {
   SaveQuoteSchema,
   UpdateQuoteSchema,
 } from '../src/schemas.js';
+import { hidesCost, stripQuoteCost } from '../server/sanitize.js';
 import * as XLSX from 'xlsx';
 
 const router = Router();
@@ -48,7 +49,8 @@ router.get('/', async (req, res) => {
   try {
     const { status, search } = req.query;
     const quotes = await db.getQuotes(status as string, search as string);
-    res.json({ success: true, count: quotes.length, data: quotes });
+    const visible = hidesCost(req.user?.role) ? quotes.map(stripQuoteCost) : quotes;
+    res.json({ success: true, count: visible.length, data: visible });
   } catch (err: any) {
     res.status(500).json({ success: false, error: describeDbError(err) });
   }
@@ -61,7 +63,7 @@ router.get('/:id', async (req, res) => {
     if (!quote) {
       return res.status(404).json({ success: false, error: '견적서를 찾을 수 없습니다.' });
     }
-    res.json({ success: true, data: quote });
+    res.json({ success: true, data: hidesCost(req.user?.role) ? stripQuoteCost(quote) : quote });
   } catch (err: any) {
     res.status(500).json({ success: false, error: describeDbError(err) });
   }
