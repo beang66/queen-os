@@ -7,6 +7,8 @@ import { QuoteHistoryAudit } from './components/QuoteHistoryAudit';
 import { SystemDiagram } from './components/SystemDiagram';
 import { ParseAccuracyDashboard } from './components/ParseAccuracyDashboard';
 import { ToastNotification } from './components/common/ToastNotification';
+import { LoginPage } from './components/LoginPage';
+import { useAuth } from './hooks/useAuth';
 import { ParsedPriceItem, PricingItem, QuoteDocument, QuoteStatus } from './types';
 import { queryClient } from './lib/queryClient';
 import {
@@ -33,10 +35,17 @@ import {
  * - TanStack Query 기반 API 캐싱 & 낙관적 업데이트
  */
 export default function App() {
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // 세션 확인 중 — 로그인 화면이 깜빡이지 않도록 빈 화면을 보여줍니다.
+  if (loading) return null;
+
+  // 비로그인 상태이면 로그인 페이지로
+  if (!user) return <LoginPage />;
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
