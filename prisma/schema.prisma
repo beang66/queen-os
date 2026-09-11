@@ -153,7 +153,7 @@ model AiParseLog {
 }
 
 model QuoteDraftRevision {
-  id       Int      @id @default(autoincrement())
+  id       BigInt   @id @default(autoincrement())
   draftId  String   @map("draft_id")
   draft    Draft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
   revision Int
