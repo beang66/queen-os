@@ -12,7 +12,7 @@
  * - POST   /api/pricing/reset-seed  : 표준 카탈로그 초기화
  */
 import { Router } from 'express';
-import { db } from '../server/db.js';
+import { db, describeDbError } from '../server/db.js';
 import { parseBody } from '../server/validate.js';
 import {
   PricingBulkSchema,
@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
     const items = await db.getPricingItems(search as string, category as string);
     res.json({ success: true, count: items.length, data: items });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -39,7 +39,7 @@ router.get('/fingerprint', async (_req, res) => {
   try {
     res.json({ success: true, data: { fingerprint: await db.getPricingFingerprint() } });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -52,7 +52,7 @@ router.get('/:id', async (req, res) => {
     }
     res.json({ success: true, data: item });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -77,7 +77,7 @@ router.post('/', async (req, res) => {
     });
     res.json({ success: true, data: created });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -93,7 +93,7 @@ router.put('/:id', async (req, res) => {
     }
     res.json({ success: true, data: updated });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -103,7 +103,7 @@ router.delete('/:id', async (req, res) => {
     const success = await db.deletePricingItem(req.params.id);
     res.json({ success });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -131,7 +131,7 @@ router.post('/bulk', async (req, res) => {
     const currentItems = await db.getPricingItems();
     res.json({ success: true, ...result, currentTotal: currentItems.length });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -141,7 +141,7 @@ router.post('/reset-seed', async (_req, res) => {
     const items = await db.resetPricingCatalog();
     res.json({ success: true, message: '퀸 주방가구 표준 단가표 카탈로그로 초기화되었습니다.', count: items.length });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 

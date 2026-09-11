@@ -7,10 +7,13 @@
  * - 개발 환경 Vite 미들웨어 통합 (HMR 웹소켓 단일 포트 서빙)
  * - 프로덕션 SPA 정적 파일 서빙
  */
+// 이 import 는 순서가 곧 기능이다. 아래 라우터들이 Prisma 클라이언트를 만들기 전에
+// .env 가 로드되어야 하므로 반드시 첫 줄에 둔다 (server/env.ts 주석 참고).
+import './server/env.js';
+
 import express from 'express';
 import http from 'http';
 import path from 'path';
-import dotenv from 'dotenv';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 
@@ -20,8 +23,6 @@ import draftsRouter from './routes/drafts.js';
 import parseLogsRouter from './routes/parseLogs.js';
 import { parseCustomerOrder, parseUnstructuredDocument } from './server/geminiService.js';
 import { db } from './server/db.js';
-
-dotenv.config();
 
 const app = express();
 const PORT = 3000;

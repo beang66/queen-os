@@ -10,7 +10,7 @@
  * - DELETE /api/drafts/:id         : 초안 삭제
  */
 import { Router } from 'express';
-import { db } from '../server/db.js';
+import { db, describeDbError } from '../server/db.js';
 import { parseBody, parseQuery } from '../server/validate.js';
 import {
   CreateDraftSchema,
@@ -31,7 +31,7 @@ router.post('/', async (req, res) => {
     res.json({ success: true, data: draft });
   } catch (err: any) {
     console.error('Create draft error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
 
     res.json({ success: true, data: await db.getDrafts(query.status) });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -65,7 +65,7 @@ router.get('/:id', async (req, res) => {
       },
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -97,7 +97,7 @@ router.put('/:id', async (req, res) => {
     });
   } catch (err: any) {
     console.error('Save draft error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -113,7 +113,7 @@ router.post('/:id/restore', async (req, res) => {
     }
     res.json({ success: true, data: restored });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -122,7 +122,7 @@ router.delete('/:id', async (req, res) => {
   try {
     res.json({ success: await db.deleteDraft(req.params.id) });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 

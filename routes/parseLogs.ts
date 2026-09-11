@@ -7,7 +7,7 @@
  * - GET  /api/parse-logs/stats       : 기간별 수정률/정확도 집계 (필드별 순위 포함)
  */
 import { Router } from 'express';
-import { db } from '../server/db.js';
+import { db, describeDbError } from '../server/db.js';
 import { parseBody, parseQuery } from '../server/validate.js';
 import { ConfirmParseLogSchema, ParseLogListQuerySchema, ParseLogStatsQuerySchema } from '../src/schemas.js';
 
@@ -23,7 +23,7 @@ router.get('/stats', async (req, res) => {
     res.json({ success: true, data: stats });
   } catch (err: any) {
     console.error('Parse log stats error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
     const logs = await db.getParseLogs(query.limit, query.kind);
     res.json({ success: true, count: logs.length, data: logs });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -64,7 +64,7 @@ router.post('/:id/confirm', async (req, res) => {
     res.json({ success: true, data: diff });
   } catch (err: any) {
     console.error('Parse log confirm error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 

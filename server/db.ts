@@ -1,5 +1,17 @@
+// PrismaClient 가 만들어지기 전에 .env 가 로드되어야 한다. 이 import 는 순서가 곧 기능이므로
+// 항상 첫 줄에 둔다 (자세한 이유는 server/env.ts 주석 참고).
+import { assertDatabaseEnv } from './env.js';
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
+
+// DB 설정이 없으면 여기서 멈춘다. 그대로 두면 서버는 정상 기동한 것처럼 보이다가
+// 사용자가 초안을 저장하는 순간 Prisma 스택 트레이스로 실패한다 (포트 충돌 처리와 같은 방식).
+try {
+  assertDatabaseEnv();
+} catch (err: any) {
+  console.error(err.message);
+  process.exit(1);
+}
 import type { Draft as DraftRow, Quote as QuoteRow, QuoteDraftRevision as RevisionRow, PricingItem as PricingRow } from '@prisma/client';
 import {
   AiParseLogSummary,
@@ -45,6 +57,33 @@ export type DraftSaveResult =
   | { status: 'CONFLICT'; current: QuoteDraft };
 
 const daysBetween = (from: Date, to: number) => (to - from.getTime()) / 86_400_000;
+
+/**
+ * Prisma 오류를 화면에 그대로 띄울 수 있는 한 문장으로 바꾼다.
+ *
+ * 라우트가 err.message 를 그대로 내려주면 사용자는 "Invalid
+ * prisma.pricingItem.findMany() invocation ... schema.prisma:8" 같은 스택을 보게 되고,
+ * 정작 무엇을 해야 하는지는 알 수 없습니다. 알아볼 수 있는 유형만 골라 바꾸고,
+ * 나머지는 원문을 유지합니다.
+ */
+export function describeDbError(err: any): string {
+  const message = String(err?.message ?? err ?? '');
+  const code = err?.code;
+
+  if (message.includes('Environment variable not found: DATABASE_URL')) {
+    return '데이터베이스 접속 정보(DATABASE_URL)를 찾을 수 없습니다. 프로젝트 루트의 .env 를 확인한 뒤 서버를 다시 시작하세요.';
+  }
+  if (code === 'P1001' || message.includes("Can't reach database server")) {
+    return '데이터베이스 서버에 연결할 수 없습니다. 네트워크 연결과 Supabase 접속 정보를 확인하세요.';
+  }
+  if (code === 'P1002' || message.includes('timed out')) {
+    return '데이터베이스 응답이 지연되어 요청이 취소되었습니다. 잠시 후 다시 시도하세요.';
+  }
+  if (code === 'P2021' || message.includes('does not exist in the current database')) {
+    return '데이터베이스에 필요한 테이블이 없습니다. `npx prisma db push` 로 스키마를 반영하세요.';
+  }
+  return message;
+}
 
 // ---------------------------------------------------------------------------
 // Prisma row → 도메인 타입 매핑

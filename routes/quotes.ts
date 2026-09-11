@@ -11,7 +11,7 @@
  * - POST   /api/quotes/excel        : 견적서 엑셀(.xlsx) 파일 생성 및 다운로드
  */
 import { Router, Request, Response } from 'express';
-import { db } from '../server/db.js';
+import { db, describeDbError } from '../server/db.js';
 import { calculateDeterministicQuote } from '../server/calculationEngine.js';
 import { parseBody } from '../server/validate.js';
 import {
@@ -35,7 +35,7 @@ router.post('/calculate', async (req, res) => {
     res.json({ success: true, data: calculationResult });
   } catch (err: any) {
     console.error('Calculation error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -50,7 +50,7 @@ router.get('/', async (req, res) => {
     const quotes = await db.getQuotes(status as string, search as string);
     res.json({ success: true, count: quotes.length, data: quotes });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -63,7 +63,7 @@ router.get('/:id', async (req, res) => {
     }
     res.json({ success: true, data: quote });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -104,7 +104,7 @@ router.post('/', async (req, res) => {
     res.json({ success: true, data: saved });
   } catch (err: any) {
     console.error('Save quote error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -120,7 +120,7 @@ router.put('/:id', async (req, res) => {
     }
     res.json({ success: true, data: updated });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -130,7 +130,7 @@ router.delete('/:id', async (req, res) => {
     const success = await db.deleteQuote(req.params.id);
     res.json({ success });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 });
 
@@ -189,7 +189,7 @@ export function handleExportQuoteExcel(req: Request, res: Response) {
     res.send(buffer);
   } catch (err: any) {
     console.error('Excel export error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: describeDbError(err) });
   }
 }
 
