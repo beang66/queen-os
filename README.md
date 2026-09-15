@@ -7,7 +7,8 @@ admin@queen.com
 Admin1234!
 
 ```
-PPT: (https://github.com/userattachments/files/32091336/B2B.SaaS._260911.pdf)
+PPT: [주방가구 주문,견적 관리 OS_B2B SaaS Project.pdf](https://github.com/user-attachments/files/32230893/OS_B2B.SaaS.Project.pdf)
+
 ```
 상담 자료(메모·도면·사진·PDF)에서 주문 정보를 추출하고, 단가표 DB를 기준으로 결정론적으로 원가를 산출해 견적서를 발행하는 시스템입니다.
 
