@@ -5,12 +5,15 @@ import {
   Database,
   History,
   Layers as SchemaIcon,
+  LogOut,
   Sparkles,
 } from 'lucide-react';
 
 interface HeaderProps {
   pricingCount: number;
   quotesCount: number;
+  /** 로그아웃 버튼 클릭 시 호출되는 콜백 */
+  onLogout: () => void;
 }
 
 /**
@@ -21,6 +24,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   pricingCount,
   quotesCount,
+  onLogout,
 }) => {
   const location = useLocation();
   const pathname = location.pathname;
@@ -64,17 +68,37 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
 
             <div className="hidden md:flex items-center gap-2 text-xs">
-              <div className="bg-gray-800 px-2.5 py-1 rounded border border-gray-700 flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-400 font-semibold">단가 품목</span>
-                <span className="font-mono font-bold text-blue-400">{pricingCount}</span>
-              </div>
-              <div className="bg-gray-800 px-2.5 py-1 rounded border border-gray-700 flex items-center gap-1.5">
+              {/* 저장 견적 박스 — 클릭 시 견적 관리(/history) 이동 */}
+              <Link
+                to="/history"
+                className="bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded border border-gray-700 hover:border-orange-500/50 flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="견적 관리 페이지로 이동"
+              >
                 <span className="text-[10px] text-gray-400 font-semibold">저장 견적</span>
                 <span className="font-mono font-bold text-orange-400">{quotesCount}</span>
-              </div>
+              </Link>
+              {/* 단가 품목 박스 — 클릭 시 단가 관리(/pricing) 이동 */}
+              <Link
+                to="/pricing"
+                className="bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded border border-gray-700 hover:border-blue-500/50 flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="단가 관리 페이지로 이동"
+              >
+                <span className="text-[10px] text-gray-400 font-semibold">단가 품목</span>
+                <span className="font-mono font-bold text-blue-400">{pricingCount}</span>
+              </Link>
             </div>
 
             <div className="h-4 w-[1px] bg-gray-600 hidden sm:block"></div>
+
+            {/* 로그아웃 버튼 */}
+            <button
+              onClick={onLogout}
+              className="text-xs px-2.5 py-1 rounded font-medium transition flex items-center gap-1 border bg-gray-700 hover:bg-red-700/80 text-gray-300 hover:text-white border-gray-600 hover:border-red-500"
+              title="로그아웃"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">로그아웃</span>
+            </button>
 
             {/* 시스템 설정 버튼 */}
             <NavLink

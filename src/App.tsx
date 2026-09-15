@@ -36,6 +36,7 @@ import {
  */
 function MainApp() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -45,6 +46,12 @@ function MainApp() {
     setTimeout(() => {
       setToastMessage(null);
     }, 4000);
+  };
+
+  /** 로그아웃: 서버 세션 파기 → 캐시 초기화 → 로그인 화면 복귀 */
+  const handleLogout = async () => {
+    await logout();
+    navigate('/', { replace: true });
   };
 
   // ---------------------------------------------------------------------------
@@ -170,6 +177,7 @@ function MainApp() {
       <Header
         pricingCount={pricingItems.length}
         quotesCount={quotes.length}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area — React Router Routes */}

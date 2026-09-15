@@ -100,12 +100,14 @@ export function readCookie(req: Request, name: string): string | undefined {
   return undefined;
 }
 
-export function setSessionCookie(res: Response, token: string, expiresAt: Date): void {
+// expiresAt 은 DB 세션 레코드에만 기록됩니다.
+// 쿠키에 expires/maxAge 를 지정하지 않으면 브라우저는 세션 쿠키로 취급하여
+// 브라우저 창을 완전히 닫을 때 쿠키를 자동으로 삭제합니다 (자동 로그아웃).
+export function setSessionCookie(res: Response, token: string, _expiresAt?: Date): void {
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
-    expires: expiresAt,
     path: '/',
   });
 }
