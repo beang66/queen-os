@@ -15,7 +15,10 @@ import express from 'express';
 import http from 'http';
 import path from 'path';
 import multer from 'multer';
-import { createServer as createViteServer } from 'vite';
+// vite 는 개발 모드에서만 startServer() 안에서 동적으로 import 한다.
+// 최상위에서 import 하면 Vercel 서버리스 함수가 로드 시점에 rollup 네이티브 바이너리를 찾다가
+// 크래시한다 (FUNCTION_INVOCATION_FAILED). rollup 은 바이너리를 계산된 경로로 require 해서
+// Vercel 파일 트레이서가 함수 번들에 포함시키지 못한다.
 
 import pricingRouter from './routes/pricing.js';
 import quotesRouter, { handleExportQuoteExcel } from './routes/quotes.js';
@@ -199,6 +202,7 @@ async function startServer() {
     // 미들웨어 모드에서는 이 서버 자신을 가리키는 자기참조 프록시가 되므로 끈다.
     process.env.QUEEN_MIDDLEWARE_MODE = 'true';
 
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
