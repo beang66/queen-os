@@ -86,9 +86,40 @@ router.post('/logout', async (req, res) => {
   }
 });
 
-/** 현재 사용자. 비로그인 상태에서도 200 으로 null 을 돌려줘 화면이 분기할 수 있게 한다. */
-router.get('/me', (req, res) => {
-  res.json({ success: true, data: req.user ?? null });
+/** 현재 사용자 조회 및 자동 로그인. 세션이 없을 경우 기본 관리자 세션을 자동 발급합니다. */
+router.get('/me', async (req, res) => {
+  try {
+    const skipAutoLogin = req.headers['x-skip-auto-login'] === 'true';
+    let user = req.user;
+
+    if (!user && !skipAutoLogin) {
+      const defaultAdmin = await db.getOrCreateDefaultAdmin();
+      if (defaultAdmin) {
+        await issueSession(defaultAdmin.id, res, req.headers['user-agent']);
+        user = defaultAdmin;
+      }
+    }
+
+    res.json({ success: true, data: user ?? null });
+  } catch (err: any) {
+    console.error('Me/Auto-login error:', err);
+    res.json({ success: true, data: req.user ?? null });
+  }
+});
+
+/** 원클릭 관리자 자동 로그인 */
+router.post('/auto-login', async (req, res) => {
+  try {
+    const defaultAdmin = await db.getOrCreateDefaultAdmin();
+    if (!defaultAdmin) {
+      return res.status(500).json({ success: false, error: '관리자 계정을 준비할 수 없습니다.' });
+    }
+    await issueSession(defaultAdmin.id, res, req.headers['user-agent']);
+    res.json({ success: true, data: defaultAdmin });
+  } catch (err: any) {
+    console.error('Auto-login error:', err);
+    res.status(500).json({ success: false, error: describeDbError(err) });
+  }
 });
 
 /**

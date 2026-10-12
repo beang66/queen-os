@@ -1,11 +1,9 @@
 # 퀸 주방가구 견적 및 원가 자동화 시스템 (Queen-OS)
-링크: https://queen-os.onrender.com/
+링크: https://queen-os-theta.vercel.app/
 ```
-로그인
-admin@queen.com
-비밀번호 
-Admin1234!
-
+접속 시 자동 로그인 (기본 관리자 계정)
+- 아이디: admin@queen.com
+- 비밀번호: Admin1234!
 ```
 PPT: [주방가구 주문,견적 관리 OS_B2B SaaS Project.pdf](https://github.com/user-attachments/files/32230893/OS_B2B.SaaS.Project.pdf)
 

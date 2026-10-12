@@ -12,6 +12,7 @@ interface AuthContextValue {
   /** 최초 세션 확인이 끝나기 전 (로그인 화면을 깜빡이며 보여주지 않기 위해) */
   loading: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
+  autoLogin: () => Promise<AuthUser>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   /** 등급 확인 헬퍼 — 화면 분기용. 실제 차단은 서버가 합니다. */
@@ -39,7 +40,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { data, isLoading } = useQuery({
     queryKey: SESSION_QUERY_KEY,
     queryFn: async () => {
-      const res = await fetchValidated(SessionResponse, '/api/auth/me');
+      const skipAutoLogin =
+        typeof window !== 'undefined' &&
+        sessionStorage.getItem('queen_manual_logout') === 'true';
+      const res = await fetchValidated(
+        SessionResponse,
+        '/api/auth/me',
+        skipAutoLogin ? { headers: { 'x-skip-auto-login': 'true' } } : undefined
+      );
       return res.data;
     },
     // 세션은 화면 진입마다 확인한다. 만료된 채로 오래 남아 있으면
@@ -51,6 +59,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const user = data ?? null;
 
   const login = useCallback(async (email: string, password: string) => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('queen_manual_logout');
+    }
     const res = await fetchValidated(AuthUserResponse, '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -60,8 +71,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res.data;
   }, []);
 
+  const autoLogin = useCallback(async () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('queen_manual_logout');
+    }
+    const res = await fetchValidated(AuthUserResponse, '/api/auth/auto-login', {
+      method: 'POST',
+    });
+    queryClient.setQueryData(SESSION_QUERY_KEY, res.data);
+    return res.data;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('queen_manual_logout', 'true');
+      }
       await fetchJson('/api/auth/logout', { method: 'POST' });
     } finally {
       // 서버 응답과 무관하게 화면 상태는 로그아웃으로 만든다.
@@ -84,11 +109,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user,
       loading: isLoading,
       login,
+      autoLogin,
       logout,
       changePassword,
       can: permissionsFor(user?.role),
     }),
-    [user, isLoading, login, logout, changePassword]
+    [user, isLoading, login, autoLogin, logout, changePassword]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

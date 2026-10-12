@@ -21,6 +21,8 @@ npm-debug.log*
 # misc
 .DS_Store
 Thumbs.db
+.idea/
+.claude/
 
 # Vite 가 설정을 로드할 때 만드는 임시 파일
 vite.config.ts.timestamp-*

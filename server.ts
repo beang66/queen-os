@@ -37,6 +37,9 @@ import { db } from './server/db.js';
 const app = express();
 const PORT = 3000;
 
+// Render 등 리버스 프록시 환경 지원
+app.set('trust proxy', 1);
+
 // 파일 업로드(도면/문서)용 Multer 메모리 스토리지
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -62,14 +65,21 @@ app.get('/api/health', (_req, res) => {
 // 2. 세션 인식 (모든 /api 요청)
 //
 // 쿠키의 세션 토큰으로 사용자를 찾아 req.user 에 실어둔다. 여기서는 막지 않고,
-// 실제 차단은 아래 라우터별 requireAuth/requireRole 이 담당한다. 그래야
-// /api/auth/me 처럼 "비로그인도 200 으로 답해야 하는" 경로가 자연스럽다.
+// 실제 차단은 아래 라우터별 requireAuth/requireRole 이 담당한다.
+// 세션 쿠키가 없는 경우 배포 환경 편의를 위해 기본 관리자로 자동 로그인 폴백합니다.
 // ----------------------------------------------------
 app.use('/api', async (req, _res, next) => {
   try {
     const token = readCookie(req, SESSION_COOKIE);
     if (token) {
       req.user = (await db.getUserBySessionToken(hashSessionToken(token))) ?? undefined;
+    }
+    // 자동 로그인 지원: 유효한 세션이 없고 수동 로그아웃 상태가 아니며 로그아웃 API가 아니면 기본 관리자로 자동 인식
+    if (!req.user && req.path !== '/auth/logout' && req.headers['x-skip-auto-login'] !== 'true') {
+      const defaultAdmin = await db.getOrCreateDefaultAdmin();
+      if (defaultAdmin) {
+        req.user = defaultAdmin;
+      }
     }
   } catch (err: any) {
     // 세션 조회 실패로 API 전체를 막지는 않는다. 비로그인으로 취급되어 401 이 난다.

@@ -634,6 +634,78 @@ class PrismaStore {
     }
   }
 
+  /**
+   * 자동 로그인용 기본 관리자 계정을 조회하거나 없으면 생성한다.
+   */
+  public async getOrCreateDefaultAdmin(): Promise<AuthUser | null> {
+    try {
+      const preferredEmails = [
+        (process.env.ADMIN_EMAIL || '').toLowerCase(),
+        'admin@queen.com',
+        'admin@queenkitchen.kr',
+      ].filter(Boolean);
+
+      for (const email of preferredEmails) {
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (user) {
+          if (user.status !== 'ACTIVE') {
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { status: 'ACTIVE', mustChangePassword: false },
+            });
+          }
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role as UserRole,
+            mustChangePassword: false,
+          };
+        }
+      }
+
+      // 다른 활성 ADMIN 계정이 있다면 첫 번째 ADMIN 반환
+      const anyAdmin = await prisma.user.findFirst({
+        where: { role: 'ADMIN', status: 'ACTIVE' },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (anyAdmin) {
+        return {
+          id: anyAdmin.id,
+          email: anyAdmin.email,
+          name: anyAdmin.name,
+          role: anyAdmin.role as UserRole,
+          mustChangePassword: false,
+        };
+      }
+
+      // 없으면 기본 관리자 생성
+      const defaultEmail = (process.env.ADMIN_EMAIL || 'admin@queen.com').toLowerCase();
+      const defaultPassword = process.env.ADMIN_PASSWORD || 'Admin1234!';
+      const created = await prisma.user.create({
+        data: {
+          email: defaultEmail,
+          name: '관리자',
+          role: 'ADMIN',
+          passwordHash: hashPassword(defaultPassword),
+          status: 'ACTIVE',
+          mustChangePassword: false,
+        },
+      });
+
+      return {
+        id: created.id,
+        email: created.email,
+        name: created.name,
+        role: created.role as UserRole,
+        mustChangePassword: false,
+      };
+    } catch (err: any) {
+      console.error('기본 관리자 계정 조회/생성 실패:', err.message);
+      return null;
+    }
+  }
+
   public async getUsers(): Promise<AppUser[]> {
     const rows = await prisma.user.findMany({ orderBy: [{ role: 'asc' }, { createdAt: 'asc' }] });
     return rows.map(toAppUser);
