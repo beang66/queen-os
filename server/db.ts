@@ -10,7 +10,9 @@ try {
   assertDatabaseEnv();
 } catch (err: any) {
   console.error(err.message);
-  process.exit(1);
+  if (!process.env.VERCEL) {
+    process.exit(1);
+  }
 }
 import type {
   Draft as DraftRow,
