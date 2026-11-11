@@ -1,20 +1,60 @@
-# Queen-OS
+<div align="center">
+  <h1 align="center">
+    Queen-OS
+    <br />
+    <br />
+    <a href="https://queen-os-theta.vercel.app/">
+      <img src="docs/screenshots/quote-step-1-input.png" alt="Queen-OS 자료 입력 화면" width="880">
+    </a>
+  </h1>
+</div>
 
-> 상담 자료를 검수 가능한 주문 정보로 바꾸고, 계산 근거와 버전이 남는 견적서를 발행하는 주방가구 B2B 운영 시스템입니다.
+<p align="center">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React 19">
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5">
+  <img src="https://img.shields.io/badge/Express-API-000000?logo=express&logoColor=white" alt="Express API">
+  <img src="https://img.shields.io/badge/Prisma-Supabase_PostgreSQL-2D3748?logo=prisma&logoColor=white" alt="Prisma Supabase PostgreSQL">
+  <img src="https://img.shields.io/badge/Gemini-입력_보조-4285F4?logo=google&logoColor=white" alt="Gemini 입력 보조">
+  <img src="https://img.shields.io/badge/Vitest-tests-6E9F18?logo=vitest&logoColor=white" alt="Vitest tests">
+  <img src="https://img.shields.io/badge/status-prototype-lightgrey" alt="status prototype">
+</p>
 
-[라이브 데모](https://queen-os-theta.vercel.app/) · [발표 자료](https://github.com/user-attachments/files/32230893/OS_B2B.SaaS.Project.pdf) · [기술규격서](docs/기술규격서.md) · [KPI 정의](docs/프로젝트-KPI-정의서.md)
+<p align="center"><a href="https://queen-os-theta.vercel.app/">라이브 데모</a> · <a href="https://github.com/user-attachments/files/32230893/OS_B2B.SaaS.Project.pdf">발표 자료</a> · <a href="docs/기술규격서.md">기술규격서</a> · <a href="docs/프로젝트-KPI-정의서.md">KPI 정의</a></p>
 
-![Queen-OS 자료 입력 화면](docs/screenshots/quote-step-1-input.png)
+## Introduction
 
-## 이 README에서 확인할 내용
+상담 자료를 검수 가능한 주문 정보로 바꾸고, 계산 근거와 버전이 남는 견적서를 발행하는 주방가구 B2B 운영 시스템입니다. 퀸주방가구에서 상담 · 견적 · 실측을 직접 맡으며 겪은 재입력, 수기 계산 오류, 견적 버전 혼선에서 시작했습니다.
 
-| 궁금한 점 | 바로가기 |
-| --- | --- |
-| 어떤 문제를 해결하나 | [프로젝트 개요](#프로젝트-개요) |
-| 실제 견적은 어떻게 만드나 | [견적 작성 흐름](#견적-작성-흐름) |
-| 결과를 어떻게 신뢰하나 | [신뢰를 만드는 설계](#신뢰를-만드는-설계) |
-| 직접 실행하려면 | [로컬 실행](#로컬-실행) |
-| 상세 정책과 규격은 어디에 있나 | [문서 안내](#문서-안내) |
+- **AI는 입력만 돕습니다**
+
+> 원본 자료와 AI 추출 결과를 한 화면에서 비교하고, 품목 · 규격 · 수량은 사람이 확정합니다. AI는 가격을 결정하지 않습니다.
+
+- **금액은 규칙 엔진이 계산합니다**
+
+> 단가표 DB와 명시된 규칙으로 원가와 판매가를 계산하고, 적용 단가와 계산 근거를 함께 보여 줍니다.
+
+- **견적은 덮어쓰지 않습니다**
+
+> 수정 견적은 V2 · V3로 보존하고, 발행 당시 주문 정보 · 계산 결과 · 단가 스냅샷을 함께 남깁니다.
+
+## Installation
+
+Node.js 20 이상과 PostgreSQL 연결 정보가 필요합니다.
+
+```bash
+npm install
+npm run db:migrate:deploy
+npm run dev:no-open
+```
+
+개발 서버와 API는 `http://localhost:3000`에서 실행됩니다. Gemini 키가 없으면 휴리스틱 파서로 전환됩니다.
+
+```bash
+npm test
+npm run build
+```
+
+비밀번호, API 키, 관리자 인증 정보는 커밋하지 마세요. 배포 환경에서는 별도 비밀 변수로 관리해야 합니다.
 
 ## 프로젝트 개요
 
@@ -101,25 +141,6 @@ Express + Zod
 Supabase PostgreSQL
 ```
 
-## 로컬 실행
-
-Node.js 20 이상과 PostgreSQL 연결 정보가 필요합니다.
-
-```bash
-npm install
-npm run db:migrate:deploy
-npm run dev:no-open
-```
-
-개발 서버와 API는 `http://localhost:3000`에서 실행됩니다. Gemini 키가 없으면 휴리스틱 파서로 전환됩니다.
-
-```bash
-npm test
-npm run build
-```
-
-비밀번호, API 키, 관리자 인증 정보는 커밋하지 마세요. 배포 환경에서는 별도 비밀 변수로 관리해야 합니다.
-
 ## 문서 안내
 
 README는 제품을 빠르게 이해하기 위한 시작점입니다. 세부 규칙은 목적에 따라 분리했습니다.
@@ -137,3 +158,7 @@ README는 제품을 빠르게 이해하기 위한 시작점입니다. 세부 규
 - AI 추출 품질은 문서 형식과 입력 상태에 영향을 받습니다.
 - 자동 저장과 충돌 복구는 장시간 다중 사용자 환경에서 추가 검증이 필요합니다.
 - 견적서 출력과 외부 ERP 연동 범위는 운영 환경에 맞춰 확정해야 합니다.
+
+## Author
+
+안정빈 — 기획 · 업무 흐름 · 데이터 구조 설계, AI 코딩 도구 기반 구현. 12년차 백엔드 개발자가 코드를 검수했습니다.
