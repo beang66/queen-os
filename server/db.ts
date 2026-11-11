@@ -683,7 +683,8 @@ class PrismaStore {
 
       // 없으면 기본 관리자 생성
       const defaultEmail = (process.env.ADMIN_EMAIL || 'admin@queen.com').toLowerCase();
-      const defaultPassword = process.env.ADMIN_PASSWORD || 'Admin1234!';
+      // 공개 저장소에 고정 비밀번호를 두지 않는다. .env 값이 없으면 임의 비밀번호로 만든다.
+      const defaultPassword = process.env.ADMIN_PASSWORD || generateInitialPassword();
       const created = await prisma.user.create({
         data: {
           email: defaultEmail,

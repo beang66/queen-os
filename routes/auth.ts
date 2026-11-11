@@ -11,6 +11,7 @@
  */
 import { Router } from 'express';
 import { db, describeDbError } from '../server/db.js';
+import { autoLoginEnabled } from '../server/autoLogin.js';
 import { parseBody } from '../server/validate.js';
 import { ChangePasswordSchema, LoginSchema } from '../src/schemas.js';
 import {
@@ -92,7 +93,7 @@ router.get('/me', async (req, res) => {
     const skipAutoLogin = req.headers['x-skip-auto-login'] === 'true';
     let user = req.user;
 
-    if (!user && !skipAutoLogin) {
+    if (autoLoginEnabled() && !user && !skipAutoLogin) {
       const defaultAdmin = await db.getOrCreateDefaultAdmin();
       if (defaultAdmin) {
         await issueSession(defaultAdmin.id, res, req.headers['user-agent']);
@@ -110,6 +111,9 @@ router.get('/me', async (req, res) => {
 /** 원클릭 관리자 자동 로그인 */
 router.post('/auto-login', async (req, res) => {
   try {
+    if (!autoLoginEnabled()) {
+      return res.status(403).json({ success: false, error: '자동 로그인이 꺼져 있습니다. 이메일과 비밀번호로 로그인하세요.' });
+    }
     const defaultAdmin = await db.getOrCreateDefaultAdmin();
     if (!defaultAdmin) {
       return res.status(500).json({ success: false, error: '관리자 계정을 준비할 수 없습니다.' });
