@@ -53,7 +53,7 @@ function extractOrderEntityHeuristically(promptText: string): OrderEntity {
   const text = promptText || '';
 
   // 1. Customer Name
-  let customerName = '박지은 고객님';
+  let customerName = '김예시 고객님';
   const nameMatch = text.match(/(?:고객명|고객|현장명|현장|주문자)\s*[:=]?\s*([가-힣a-zA-Z0-9\s]{2,15})/i) ||
                     text.match(/([가-힣]{2,4})\s*(?:고객님|실장님|소장님|님)/);
   if (nameMatch && nameMatch[1]) {
@@ -62,7 +62,7 @@ function extractOrderEntityHeuristically(promptText: string): OrderEntity {
   }
 
   // 2. Contact
-  let contact = '010-3829-1940';
+  let contact = '010-0000-0001';
   const phoneMatch = text.match(/01[016789]-?\d{3,4}-?\d{4}/) ||
                      text.match(/(?:연락처|전화|H\.?P)\s*[:=]?\s*([0-9-]{10,13})/i);
   if (phoneMatch) {
@@ -70,7 +70,7 @@ function extractOrderEntityHeuristically(promptText: string): OrderEntity {
   }
 
   // 3. Address
-  let address = '서울시 서초구 반포대로 120 래미안 104동 802호';
+  let address = '서울시 서초구 예시로 100 샘플아파트 101동 1001호';
   const addrMatch = text.match(/(?:주소|현장주소|위치)\s*[:=]?\s*([^\n,]+)/i) ||
                     text.match(/((?:서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)[가-힣0-9\s-]{5,50}(?:아파트|빌라|주택|오피스텔|동|호|현장)?)/);
   if (addrMatch && addrMatch[1]) {
@@ -586,7 +586,7 @@ export async function parseCustomerOrder(
 7. 시공 조건(siteConditions):
    - 층수, 엘리베이터 여부, 철거 필요 여부, 사다리차 필요 여부 판별
 8. 상담 관리 정보:
-   - projectName: 프로젝트명/현장명/공사명 (예: "서초 래미안 주방 리모델링"). 언급이 없으면 고객명+지역으로 자연스럽게 생성하지 말고 빈 문자열("")로 두십시오.
+   - projectName: 프로젝트명/현장명/공사명 (예: "서초 샘플아파트 주방 리모델링"). 언급이 없으면 고객명+지역으로 자연스럽게 생성하지 말고 빈 문자열("")로 두십시오.
    - consultDate: 상담일/문의일 (YYYY-MM-DD). 없으면 "".
    - customerType: '일반 고객' | '인테리어 업체' | '재시공 고객' | '빌더/시행사' 중 하나. 실장/소장/디자이너 언급 시 '인테리어 업체'.
    - manager: 퀸 주방가구 측 견적 담당자 이름. 없으면 "".`;

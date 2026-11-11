@@ -10,9 +10,9 @@ import { OrderEntity } from '../src/types.js';
 /** AI 가 뽑아낸 기준 주문 엔터티 (I자형 3,400mm) */
 function createParsedOrder(overrides: Partial<OrderEntity> = {}): OrderEntity {
   return {
-    customerName: '박지은 고객님',
-    contact: '010-3829-1940',
-    address: '서울시 서초구 반포대로 120',
+    customerName: '김예시 고객님',
+    contact: '010-0000-0001',
+    address: '서울시 서초구 예시로 100',
     deliveryDate: '2026-09-20',
     layoutType: 'I_SHAPE',
     dimensions: {
@@ -58,7 +58,7 @@ function createParsedOrder(overrides: Partial<OrderEntity> = {}): OrderEntity {
       needsDemolition: true,
       needsLadderTruck: false,
     },
-    rawPrompt: '반포 래미안 주방 견적 문의드립니다',
+    rawPrompt: '반포 샘플아파트 주방 견적 문의드립니다',
     ...overrides,
   };
 }
@@ -135,7 +135,7 @@ describe('diffOrderEntity', () => {
 
   it('공백 차이만 있으면 수정으로 세지 않는다', () => {
     const parsed = createParsedOrder();
-    const confirmed = createParsedOrder({ customerName: ' 박지은  고객님 ' });
+    const confirmed = createParsedOrder({ customerName: ' 김예시  고객님 ' });
 
     expect(diffOrderEntity(parsed, confirmed).correctedCount).toBe(0);
   });

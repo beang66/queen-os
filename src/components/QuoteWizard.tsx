@@ -24,7 +24,7 @@ import { CalculationResponse, DraftListResponse, OrderEntityResponse } from '../
 import { getActiveDraftId, useQuoteDraft } from '../hooks/useQuoteDraft';
 
 const DEFAULT_ORDER_ENTITY: OrderEntity = PRESET_ORDER_ENTITIES[0];
-const DEFAULT_QUOTE_TITLE = '서초 래미안 34평형 주방가구 맞춤 제작 및 시공 견적서';
+const DEFAULT_QUOTE_TITLE = '서초 샘플아파트 34평형 주방가구 맞춤 제작 및 시공 견적서';
 const DEFAULT_PUBLISH_META: QuotePublishMeta = {
   validUntilDays: 15,
   paymentTerms: '계약금 30% / 제작 착수금 40% / 설치 완료 후 잔금 30%',
@@ -265,7 +265,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildPayload, draft.draftId]);
 
-  // 실제 주문 사례 프리셋 불러오기
+  // 가상 주문 사례 프리셋 (이름 · 연락처 · 주소는 모두 지어낸 값) 불러오기
   const handleLoadPreset = (index: number) => {
     const preset = PRESET_ORDER_ENTITIES[index];
     if (!preset) return;

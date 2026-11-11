@@ -30,7 +30,7 @@ export interface OrderEntity {
   contact: string;
   address: string;
   deliveryDate?: string;         // 희망 시공일
-  projectName?: string;          // 프로젝트명 (예: 서초 래미안 주방 리모델링)
+  projectName?: string;          // 프로젝트명 (예: 서초 샘플아파트 주방 리모델링)
   consultDate?: string;          // 상담일
   customerType?: string;         // 고객 유형 (일반 고객 / 인테리어 업체 / 재시공 등)
   manager?: string;              // 담당자
@@ -171,7 +171,7 @@ export interface QuotePublishMeta {
 export interface QuoteDocument {
   id: string;
   quoteNumber: string;               // 견적번호 (예: QN-20260831-001)
-  title: string;                     // 견적명 (예: 서초 래미안 34평형 주방 가구 제작 및 시공 견적서)
+  title: string;                     // 견적명 (예: 서초 샘플아파트 34평형 주방 가구 제작 및 시공 견적서)
   createdAt: string;
   updatedAt: string;
   status: QuoteStatus;

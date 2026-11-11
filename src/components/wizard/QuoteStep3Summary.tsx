@@ -304,7 +304,7 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
               <div className="text-right text-[11px] text-slate-600 space-y-0.5 border-l border-slate-200 pl-3">
                 <div className="font-bold text-slate-900">퀸 주방가구</div>
                 <div>대표 김대표 · 123-45-67890</div>
-                <div>031-595-1234</div>
+                <div>031-000-0000</div>
               </div>
             </div>
 
