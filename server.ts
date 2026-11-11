@@ -36,6 +36,7 @@ import {
 } from './server/auth.js';
 import { parseCustomerOrder, parseUnstructuredDocument } from './server/geminiService.js';
 import { db } from './server/db.js';
+import { autoLoginEnabled } from './server/autoLogin.js';
 
 const app = express();
 const PORT = 3000;
@@ -69,7 +70,8 @@ app.get('/api/health', (_req, res) => {
 //
 // 쿠키의 세션 토큰으로 사용자를 찾아 req.user 에 실어둔다. 여기서는 막지 않고,
 // 실제 차단은 아래 라우터별 requireAuth/requireRole 이 담당한다.
-// 세션 쿠키가 없는 경우 배포 환경 편의를 위해 기본 관리자로 자동 로그인 폴백합니다.
+// 세션이 없을 때 기본 관리자로 들여보내는 자동 로그인은 DEMO_AUTO_LOGIN=true 일 때만 켠다.
+// 기본값은 꺼짐: 켜 두면 주소를 아는 누구나 관리자 권한을 얻는다. 시연용 별도 DB에서만 켤 것.
 // ----------------------------------------------------
 app.use('/api', async (req, _res, next) => {
   try {
@@ -78,7 +80,7 @@ app.use('/api', async (req, _res, next) => {
       req.user = (await db.getUserBySessionToken(hashSessionToken(token))) ?? undefined;
     }
     // 자동 로그인 지원: 유효한 세션이 없고 수동 로그아웃 상태가 아니며 로그아웃 API가 아니면 기본 관리자로 자동 인식
-    if (!req.user && req.path !== '/auth/logout' && req.headers['x-skip-auto-login'] !== 'true') {
+    if (autoLoginEnabled() && !req.user && req.path !== '/auth/logout' && req.headers['x-skip-auto-login'] !== 'true') {
       const defaultAdmin = await db.getOrCreateDefaultAdmin();
       if (defaultAdmin) {
         req.user = defaultAdmin;
