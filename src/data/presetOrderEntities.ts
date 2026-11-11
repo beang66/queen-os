@@ -2,14 +2,14 @@ import { OrderEntity } from '../types';
 import { SAMPLE_ORDER_PRESETS } from './samplePresets';
 
 /**
- * 실제 주문 사례 프리셋에 대응하는 완성된 주문 엔티티.
+ * 가상 주문 사례 프리셋 (이름 · 연락처 · 주소는 모두 지어낸 값)에 대응하는 완성된 주문 엔티티.
  * SAMPLE_ORDER_PRESETS와 동일한 순서로 정렬되어 있습니다.
  */
 export const PRESET_ORDER_ENTITIES: OrderEntity[] = [
   {
-    customerName: '박지은 고객님',
-    contact: '010-3829-1940',
-    address: '서울시 서초구 반포대로 120 래미안 104동 802호',
+    customerName: '김예시 고객님',
+    contact: '010-0000-0001',
+    address: '서울시 서초구 예시로 100 샘플아파트 101동 1001호',
     deliveryDate: '2026-09-20',
     projectName: '',
     consultDate: '2026-08-20',
@@ -63,9 +63,9 @@ export const PRESET_ORDER_ENTITIES: OrderEntity[] = [
     rawPrompt: SAMPLE_ORDER_PRESETS[0].rawText,
   },
   {
-    customerName: '이현우 소장',
-    contact: '010-9281-5541',
-    address: '경기도 성남시 분당구 운중로 45번길 12',
+    customerName: '박예시 소장',
+    contact: '010-0000-0003',
+    address: '경기도 성남시 분당구 예시로 45',
     deliveryDate: '2026-10-05',
     projectName: '판교 운중동 타운하우스 주방',
     consultDate: '2026-08-25',
@@ -119,9 +119,9 @@ export const PRESET_ORDER_ENTITIES: OrderEntity[] = [
     rawPrompt: SAMPLE_ORDER_PRESETS[1].rawText,
   },
   {
-    customerName: '최민수 건물주',
-    contact: '010-4412-8821',
-    address: '서울시 마포구 망원로 32 원룸 201호',
+    customerName: '이예시 건물주',
+    contact: '010-0000-0002',
+    address: '서울시 마포구 예시로 32 원룸 201호',
     deliveryDate: '2026-09-10',
     projectName: '망원동 원룸 201호 주방 교체',
     consultDate: '2026-08-18',

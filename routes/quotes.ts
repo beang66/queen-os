@@ -92,8 +92,8 @@ router.post('/', async (req, res) => {
         name: '퀸 주방가구 (Queen Kitchen)',
         representative: '김대표',
         bizNumber: '123-45-67890',
-        address: '경기도 남양주시 화도읍 가구공단로 88',
-        phone: '031-595-1234 / 010-8888-9999',
+        address: '경기도 남양주시 화도읍 예시로 88',
+        phone: '031-000-0000 / 010-0000-0000',
         email: 'queenkitchen@furniture.kr',
       },
     });

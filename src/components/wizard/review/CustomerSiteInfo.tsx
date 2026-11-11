@@ -89,7 +89,7 @@ export const CustomerSiteInfo: React.FC<CustomerSiteInfoProps> = ({ orderEntity,
           className="col-span-2 md:col-span-4"
           label="프로젝트명"
           value={orderEntity.projectName ?? ''}
-          placeholder="예: 서초 래미안 주방 리모델링"
+          placeholder="예: 서초 샘플아파트 주방 리모델링"
           onChange={(v) => set({ projectName: v })}
           helper="프로젝트명을 확인해주세요."
         />

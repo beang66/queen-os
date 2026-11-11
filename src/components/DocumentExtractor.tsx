@@ -6,9 +6,9 @@ import { ParsedPriceItem, OrderEntity, DocumentExtractionResponse } from '../typ
 import { fetchJson } from '../lib/api';
 
 const SAMPLE_PARSED_ORDER_ENTITY: OrderEntity = {
-  customerName: '박지은 고객님',
-  contact: '010-3829-1940',
-  address: '서울시 서초구 반포대로 120 래미안 104동 802호',
+  customerName: '김예시 고객님',
+  contact: '010-0000-0001',
+  address: '서울시 서초구 예시로 100 샘플아파트 101동 1001호',
   deliveryDate: '2026-09-20',
   layoutType: 'I_SHAPE',
   dimensions: {
