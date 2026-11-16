@@ -152,7 +152,7 @@ app.post('/api/gemini/parse-doc', requireAuth, denyWrites, upload.single('file')
     res.json({ success: true, data: extraction, parseLogId });
   } catch (err: any) {
     console.error('Document parsing endpoint error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: '요청을 처리할 수 없습니다. 잠시 후 다시 시도하세요.' });
   }
 });
 
@@ -188,7 +188,7 @@ app.post('/api/gemini/parse-order', requireAuth, denyWrites, upload.single('imag
     res.json({ success: true, data: orderEntity, parseLogId });
   } catch (err: any) {
     console.error('Order parsing endpoint error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: '요청을 처리할 수 없습니다. 잠시 후 다시 시도하세요.' });
   }
 });
 

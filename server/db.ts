@@ -95,7 +95,8 @@ export function describeDbError(err: any): string {
   if (code === 'P2021' || message.includes('does not exist in the current database')) {
     return '데이터베이스에 필요한 테이블이 없습니다. `npx prisma db push` 로 스키마를 반영하세요.';
   }
-  return message;
+  // 미인식 오류에는 SQL·스키마·접속 문자열이 포함될 수 있으므로 외부 응답에 노출하지 않는다.
+  return '요청을 처리할 수 없습니다. 잠시 후 다시 시도하세요.';
 }
 
 // ---------------------------------------------------------------------------
