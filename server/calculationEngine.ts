@@ -23,7 +23,7 @@ export async function calculateDeterministicQuote(order: OrderEntity): Promise<Q
   const validationReport: ValidationItem[] = [];
   const appliedPricingSnapshot: Record<string, PricingItem> = {};
 
-  // Helper to lookup pricing item by code or category fallback
+  // 코드 → 자재명 부분 일치 → 카테고리 순서로 단가를 찾고, 모두 없으면 경고와 임시 단가를 남긴다.
   const lookupItem = (
     code: string,
     fallbackCategory: string,
@@ -230,7 +230,7 @@ export async function calculateDeterministicQuote(order: OrderEntity): Promise<Q
   }
 
   // B. DOOR & FINISH (도어 및 마감재)
-  // 도어 면적 계산 (하부장 높이 0.72m + 상부장 높이 0.65m + 아일랜드 + 키큰장 도어)
+  // 도어 면적 추정: 하부장 0.72m, 상부장 0.68m, 아일랜드 양면 일부 및 키큰장·냉장고장 도어
   let doorAreaM2 = (lowerLenM * 0.72) + (upperLenM * 0.68) + (islandLenM * 0.72 * 1.5);
   if (dimensions.tallCabinetWidthMm) {
     doorAreaM2 += (dimensions.tallCabinetWidthMm / 1000) * 2.1;
@@ -691,7 +691,7 @@ export async function calculateDeterministicQuote(order: OrderEntity): Promise<Q
     laborSum.selling +
     accSum.selling;
 
-  // If user passed a specific customTargetMarginRate, we can keep standard or compare
+  // 목표 마진율을 이 엔진에서 재적용하지 않는다. DB 단가로 계산된 판매가와 원가의 차이만 집계한다.
   const totalMarginAmount = totalSellingPrice - totalManufacturingCost;
   const averageMarginRate =
     totalSellingPrice > 0
