@@ -72,12 +72,12 @@ export type DraftSaveResult =
 const daysBetween = (from: Date, to: number) => (to - from.getTime()) / 86_400_000;
 
 /**
- * Prisma 오류를 화면에 그대로 띄울 수 있는 한 문장으로 바꾼다.
+ * 알려진 Prisma 오류 코드만 사용자 안내 문장으로 바꾼다.
  *
  * 라우트가 err.message 를 그대로 내려주면 사용자는 "Invalid
  * prisma.pricingItem.findMany() invocation ... schema.prisma:8" 같은 스택을 보게 되고,
- * 정작 무엇을 해야 하는지는 알 수 없습니다. 알아볼 수 있는 유형만 골라 바꾸고,
- * 나머지는 원문을 유지합니다.
+ * 정작 무엇을 해야 하는지는 알 수 없습니다. 아래에서 인식한 유형만 안내로 바꾸고,
+ * 나머지는 원문을 반환하므로 외부 API 응답에 그대로 노출하지 않도록 호출부에서 주의해야 합니다.
  */
 export function describeDbError(err: any): string {
   const message = String(err?.message ?? err ?? '');
