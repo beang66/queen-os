@@ -61,8 +61,8 @@ const PURGE_AFTER_DAYS = 90;
 
 /**
  * 초안 저장 결과.
- * 판별자를 문자열로 둔 이유: 이 프로젝트는 strictNullChecks 를 켜지 않아
- * boolean 리터럴 판별자로는 타입이 좁혀지지 않는다.
+ * 결과를 문자열 status의 판별 유니온으로 표현한다.
+ * tsconfig.json의 strictNullChecks는 켜져 있으며, status에 따라 draft/current의 존재 여부를 구별한다.
  */
 export type DraftSaveResult =
   | { status: 'OK'; draft: QuoteDraft }
