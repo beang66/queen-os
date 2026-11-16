@@ -472,34 +472,44 @@ class PrismaStore {
         (current.payload as unknown as DraftPayload)?.calculationResult?.calculatedAt;
     const pricingFingerprint = calcChanged ? await this.getPricingFingerprint() : current.pricingFingerprint;
 
-    // 이력이 MAX_DRAFT_HISTORY 를 넘으면 가장 오래된 것부터 정리한다.
-    const overflow = current.revisions.length + 1 - MAX_DRAFT_HISTORY;
-    if (overflow > 0) {
-      const oldestIds = [...current.revisions]
-        .sort((a, b) => a.revision - b.revision)
-        .slice(0, overflow)
-        .map((r) => r.id);
-      await prisma.quoteDraftRevision.deleteMany({ where: { id: { in: oldestIds } } });
-    }
+    // revision 비교와 이력 추가·정리를 원자적으로 수행한다.
+    // 같은 revision으로 동시에 저장해도 이력 삭제나 덮어쓰기가 먼저 일어나지 않는다.
+    try {
+      const row = await prisma.$transaction(async (tx) => {
+        const saved = await tx.draft.update({
+          where: { id, revision: args.revision },
+          data: {
+            revision: nextRevision,
+            payload: args.payload as any,
+            customerName: args.payload.orderEntity?.customerName ?? '',
+            projectName: args.payload.orderEntity?.projectName ?? '',
+            step: args.payload.step ?? 1,
+            totalAmount: args.payload.calculationResult?.summary?.finalGrandTotal ?? null,
+            lastEditorId: args.editorId,
+            pricingFingerprint,
+            revisions: {
+              create: [{ revision: nextRevision, label: args.label || '자동 저장', payload: args.payload as any }],
+            },
+          },
+          include: { revisions: true },
+        });
 
-    const row = await prisma.draft.update({
-      where: { id },
-      data: {
-        revision: nextRevision,
-        payload: args.payload as any,
-        customerName: args.payload.orderEntity?.customerName ?? '',
-        projectName: args.payload.orderEntity?.projectName ?? '',
-        step: args.payload.step ?? 1,
-        totalAmount: args.payload.calculationResult?.summary?.finalGrandTotal ?? null,
-        lastEditorId: args.editorId,
-        pricingFingerprint,
-        revisions: {
-          create: [{ revision: nextRevision, label: args.label || '자동 저장', payload: args.payload as any }],
-        },
-      },
-      include: { revisions: true },
-    });
-    return { status: 'OK', draft: toDraft(row) };
+        const overflow = saved.revisions.length - MAX_DRAFT_HISTORY;
+        if (overflow <= 0) return saved;
+        const oldestIds = [...saved.revisions]
+          .sort((a, b) => a.revision - b.revision)
+          .slice(0, overflow)
+          .map((r) => r.id);
+        await tx.quoteDraftRevision.deleteMany({ where: { id: { in: oldestIds } } });
+        return tx.draft.findUniqueOrThrow({ where: { id }, include: { revisions: true } });
+      });
+      return { status: 'OK', draft: toDraft(row) };
+    } catch (err: any) {
+      // 경쟁 요청의 revision이 먼저 증가했을 때 Prisma는 P2025를 반환한다.
+      if (err?.code !== 'P2025') throw err;
+      const latest = await prisma.draft.findUnique({ where: { id }, include: { revisions: true } });
+      return latest ? { status: 'CONFLICT', current: toDraft(latest) } : { status: 'NOT_FOUND' };
+    }
   }
 
   /** 과거 저장 시점으로 되돌린다 (복구 자체도 새 revision 으로 기록). */
