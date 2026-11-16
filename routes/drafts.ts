@@ -108,11 +108,19 @@ router.post('/:id/restore', async (req, res) => {
     const body = parseBody(RestoreDraftSchema, req, res);
     if (!body) return;
 
-    const restored = await db.restoreDraftRevision(req.params.id, body.revision, body.editorId || 'unknown');
-    if (!restored) {
+    const result = await db.restoreDraftRevision(
+      req.params.id, body.revision, body.expectedRevision, body.editorId || 'unknown'
+    );
+    if (result.status === 'NOT_FOUND') {
       return res.status(404).json({ success: false, error: '해당 초안 또는 저장 시점을 찾을 수 없습니다.' });
     }
-    res.json({ success: true, data: restored });
+    if (result.status === 'CONFLICT') {
+      return res.status(409).json({
+        success: false, error: '다른 창에서 초안이 변경되었습니다. 최신 이력을 확인한 후 다시 시도하세요.',
+        conflict: true, data: result.current,
+      });
+    }
+    res.json({ success: true, data: result.draft });
   } catch (err: any) {
     res.status(500).json({ success: false, error: describeDbError(err) });
   }

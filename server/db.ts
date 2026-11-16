@@ -512,35 +512,53 @@ class PrismaStore {
     }
   }
 
-  /** 과거 저장 시점으로 되돌린다 (복구 자체도 새 revision 으로 기록). */
-  public async restoreDraftRevision(id: string, revision: number, editorId: string): Promise<QuoteDraft | null> {
+  /** 선택한 과거 상태를 새 revision으로 복구한다. 다른 저장과 충돌하면 덮어쓰지 않는다. */
+  public async restoreDraftRevision(
+    id: string, revision: number, expectedRevision: number, editorId: string
+  ): Promise<DraftSaveResult> {
     const current = await prisma.draft.findUnique({ where: { id }, include: { revisions: true } });
-    if (!current) return null;
+    if (!current) return { status: 'NOT_FOUND' };
+    if (current.revision !== expectedRevision) return { status: 'CONFLICT', current: toDraft(current) };
 
     const target = current.revisions.find((r) => r.revision === revision);
-    if (!target) return null;
+    if (!target) return { status: 'NOT_FOUND' };
 
     const targetPayload = target.payload as unknown as DraftPayload;
-    const nextRevision = current.revision + 1;
+    try {
+      const row = await prisma.$transaction(async (tx) => {
+        const restored = await tx.draft.update({
+          where: { id, revision: expectedRevision },
+          data: {
+            revision: expectedRevision + 1,
+            status: current.status === 'ARCHIVED' ? 'ACTIVE' : current.status,
+            payload: target.payload as any,
+            customerName: targetPayload.orderEntity?.customerName ?? '',
+            projectName: targetPayload.orderEntity?.projectName ?? '',
+            step: targetPayload.step ?? 1,
+            totalAmount: targetPayload.calculationResult?.summary?.finalGrandTotal ?? null,
+            lastEditorId: editorId,
+            revisions: {
+              create: [{ revision: expectedRevision + 1, label: `rev.${revision} 상태로 복구`, payload: target.payload as any }],
+            },
+          },
+          include: { revisions: true },
+        });
 
-    const row = await prisma.draft.update({
-      where: { id },
-      data: {
-        revision: nextRevision,
-        status: current.status === 'ARCHIVED' ? 'ACTIVE' : current.status,
-        payload: target.payload as any,
-        customerName: targetPayload.orderEntity?.customerName ?? '',
-        projectName: targetPayload.orderEntity?.projectName ?? '',
-        step: targetPayload.step ?? 1,
-        totalAmount: targetPayload.calculationResult?.summary?.finalGrandTotal ?? null,
-        lastEditorId: editorId,
-        revisions: {
-          create: [{ revision: nextRevision, label: `rev.${revision} 상태로 복구`, payload: target.payload as any }],
-        },
-      },
-      include: { revisions: true },
-    });
-    return toDraft(row);
+        const overflow = restored.revisions.length - MAX_DRAFT_HISTORY;
+        if (overflow <= 0) return restored;
+        const oldestIds = [...restored.revisions]
+          .sort((a, b) => a.revision - b.revision)
+          .slice(0, overflow)
+          .map((r) => r.id);
+        await tx.quoteDraftRevision.deleteMany({ where: { id: { in: oldestIds } } });
+        return tx.draft.findUniqueOrThrow({ where: { id }, include: { revisions: true } });
+      });
+      return { status: 'OK', draft: toDraft(row) };
+    } catch (err: any) {
+      if (err?.code !== 'P2025') throw err;
+      const latest = await prisma.draft.findUnique({ where: { id }, include: { revisions: true } });
+      return latest ? { status: 'CONFLICT', current: toDraft(latest) } : { status: 'NOT_FOUND' };
+    }
   }
 
   public async deleteDraft(id: string): Promise<boolean> {

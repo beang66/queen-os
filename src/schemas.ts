@@ -324,6 +324,7 @@ export const SaveDraftSchema = z.object({
 
 export const RestoreDraftSchema = z.object({
   revision: z.coerce.number().int().min(1),
+  expectedRevision: z.number().int().min(1),
   editorId: z.string().optional(),
 });
 

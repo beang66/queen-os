@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Archive, FileClock, History, Loader2, PlayCircle, RefreshCw, Trash2, Undo2 } from 'lucide-react';
 import { DraftStatus, QuoteDraft } from '../../types';
-import { fetchValidated } from '../../lib/api';
+import { ApiError, fetchValidated } from '../../lib/api';
 import { DraftResponse } from '../../schemas';
 import { useDrafts, useDeleteDraft, useRestoreDraft } from '../../hooks/queries';
 
@@ -75,12 +75,18 @@ export const DraftListPanel: React.FC<DraftListPanelProps> = ({ onResumeDraft })
   };
 
   const handleRestore = async (id: string, revision: number) => {
+    if (historyOf?.id !== id) return;
     if (!confirm(`rev.${revision} 시점의 내용으로 되돌릴까요? 현재 내용도 이력에 남습니다.`)) return;
     try {
-      await restoreDraftMutation.mutateAsync({ id, revision });
+      await restoreDraftMutation.mutateAsync({ id, revision, expectedRevision: historyOf.revision });
       setHistoryOf(null);
       alert(`rev.${revision} 상태로 복구했습니다. [이어서 작성]으로 확인하세요.`);
     } catch (err: any) {
+      if (err instanceof ApiError && err.status === 409) {
+        setHistoryOf(err.payload?.data ?? null);
+        alert('다른 창에서 초안을 수정했습니다. 새로고침된 이력에서 다시 선택하세요.');
+        return;
+      }
       alert(`복구 오류: ${err.message}`);
     }
   };

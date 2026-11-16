@@ -288,11 +288,11 @@ export function useDeleteDraft() {
 /** 초안 리비전 복원 뮤테이션 */
 export function useRestoreDraft() {
   return useMutation({
-    mutationFn: async ({ id, revision }: { id: string; revision: number }) => {
+    mutationFn: async ({ id, revision, expectedRevision }: { id: string; revision: number; expectedRevision: number }) => {
       return fetchJson<{ success: boolean; data: any }>(`/api/drafts/${id}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ revision }),
+        body: JSON.stringify({ revision, expectedRevision }),
       });
     },
     onSuccess: () => {
