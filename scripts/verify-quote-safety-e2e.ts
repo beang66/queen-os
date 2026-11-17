@@ -64,6 +64,47 @@ try{
  check('legacy_is_customer_default',legacy.status===200,{status:legacy.status});
  const disallowClientData=await request('/api/quotes/excel',{quoteId:quote.id,calculationResult:canonical});
  check('export_rejects_caller_supplied_result',disallowClientData.status===400,{status:disallowClientData.status});
+
+ // Explicit pricing adjustments are persisted only after server recomputation.
+ const adjustments = { lossRatePct: 5, targetMarginRate: 30, discountAmount: 17500, surchargeAmount: 8500, vatMode: 'EXCLUDED' };
+ const pricingMeta = (hiddenBreakdownIds:string[], priceOverrides:Record<string,unknown>={}) => ({
+   validUntilDays:15,paymentTerms:'테스트',exclusions:'',specialTerms:'',internalMemo:'',
+   hiddenBreakdownIds, pricingAdjustments:{...adjustments,...priceOverrides},
+ });
+ let projected = await request('/api/quotes',{
+   ...issuePayload,targetMarginRate:30,publishMeta:pricingMeta([]),
+ });
+ check('adjusted_quote_issued',projected.status===200,{status:projected.status});
+ const priced=(projected.body as any).data;
+ const pSummary=priced.calculationResult.summary;
+ check('adjusted_lines_sum_matches_total',
+   priced.calculationResult.breakdowns.reduce((n:number,l:any)=>n+l.sellingTotal,0)===pSummary.totalSellingPrice
+   &&pSummary.totalSellingPrice+pSummary.vatAmount===pSummary.finalGrandTotal,
+   {total:pSummary.finalGrandTotal});
+ check('adjusted_margin_is_persisted',priced.publishMeta?.pricingAdjustments?.targetMarginRate===30 && priced.targetMarginRate===30);
+ const withoutTopLevel=await request('/api/quotes',{...issuePayload,publishMeta:pricingMeta([])});
+ check('margin_saved_correctly_if_legacy_caller_omits_top_level',withoutTopLevel.status===200&&(withoutTopLevel.body as any).data?.targetMarginRate===30);
+ const sheetResult=await request('/api/quotes/excel',{quoteId:priced.id});
+ const book=XLSX.read(Buffer.from(sheetResult.body as ArrayBuffer),{type:'buffer'});
+ const xlsxRows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1}) as any[][];
+ const totalRow=xlsxRows.find(row=>row[0]==='최종 견적 총액');
+ check('xlsx_matches_server_adjusted_total',sheetResult.status===200&&totalRow?.[1]===pSummary.finalGrandTotal,{xlsx:totalRow?.[1],db:pSummary.finalGrandTotal});
+ const excluded=canonical.breakdowns[0].id;
+ projected=await request('/api/quotes',{
+   ...issuePayload,targetMarginRate:30,publishMeta:pricingMeta([excluded],{vatMode:'INCLUDED'}),
+ });
+ check('excluded_item_and_included_vat_issued',projected.status===200,{status:projected.status});
+ const exQuote=(projected.body as any).data;
+ check('excluded_line_removed_in_server_and_total_consistent',
+   !exQuote.calculationResult.breakdowns.some((l:any)=>l.id===excluded)
+   &&exQuote.calculationResult.breakdowns.reduce((n:number,l:any)=>n+l.sellingTotal,0)===exQuote.calculationResult.summary.totalSellingPrice
+   &&exQuote.calculationResult.summary.totalSellingPrice+exQuote.calculationResult.summary.vatAmount===exQuote.calculationResult.summary.finalGrandTotal);
+ const badMargin=await request('/api/quotes',{...issuePayload,targetMarginRate:28,publishMeta:pricingMeta([])});
+ check('inconsistent_margin_between_fields_rejected',badMargin.status===409,{status:badMargin.status});
+ const badExcluded=await request('/api/quotes',{...issuePayload,targetMarginRate:30,publishMeta:pricingMeta(['missing-id'])});
+ check('unknown_excluded_item_rejected',badExcluded.status===409,{status:badExcluded.status});
+ const badAdjust=await request('/api/quotes',{...issuePayload,targetMarginRate:30,publishMeta:pricingMeta([],{targetMarginRate:95})});
+ check('out_of_range_adjustment_rejected',badAdjust.status===400,{status:badAdjust.status});
  // VIEWER session is created only in disposable database, never production.
  const token=createSessionToken();
  const id=randomUUID();

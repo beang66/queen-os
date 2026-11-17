@@ -158,6 +158,15 @@ export interface QuoteCalculationResult {
 
 export type QuoteStatus = 'DRAFT' | 'ISSUED' | 'NEGOTIATING' | 'CONFIRMED' | 'IN_PRODUCTION' | 'COMPLETED' | 'CANCELLED';
 
+/** Shared pricing inputs used identically in the browser and on the server. */
+export interface QuotePriceAdjustments {
+  lossRatePct: number;
+  targetMarginRate: number;
+  discountAmount: number;
+  surchargeAmount: number;
+  vatMode: 'EXCLUDED' | 'INCLUDED';
+}
+
 /** 견적서 발행 단계에서 편집하는 문서 메타데이터 */
 export interface QuotePublishMeta {
   validUntilDays: number;         // 유효기간 (발행일로부터 N일)
@@ -165,7 +174,8 @@ export interface QuotePublishMeta {
   exclusions: string;             // 제외 사항
   specialTerms: string;           // 특약 사항
   internalMemo: string;           // 내부 메모 (고객 견적서에 노출되지 않음)
-  hiddenBreakdownIds: string[];   // 고객 견적서에서 숨길 품목 id 목록
+  hiddenBreakdownIds: string[];   // 견적에서 제외할 품목 id 목록 (금액에서도 제외)
+  pricingAdjustments?: QuotePriceAdjustments; // 조정값은 발행 문서에 함께 보관 (구 버전 호환을 위해 optional)
 }
 
 export interface QuoteDocument {

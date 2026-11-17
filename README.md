@@ -29,6 +29,8 @@
 
 <p align="center"><a href="https://queen-os-theta.vercel.app/">라이브 데모</a> · <a href="https://github.com/user-attachments/files/32230893/OS_B2B.SaaS.Project.pdf">발표 자료</a> · <a href="docs/기술규격서.md">기술규격서</a> · <a href="docs/프로젝트-KPI-정의서.md">KPI 정의</a></p>
 
+> **2026-11-17 가격조정 정합성 개선:** 3단계 가격 조정·4단계 견적 미리보기·서버 발행·Excel 총액을 동일 산식으로 통합하고 격리 DB 및 실제 Chrome UI에서 검증. [검증 보고서](docs/quote-pricing-parity-2026-11-17.md)를 참고하세요. **실무 정확도·고객 성과는 아직 미검증**입니다.
+
 ### Introduction
 
 상담 자료를 검수 가능한 주문 정보로 바꾸고, 계산 근거와 버전이 남는 견적서를 발행하는 주방가구 B2B 운영 시스템입니다. 퀸주방가구에서 상담 · 견적 · 실측을 직접 맡으며 겪은 재입력, 수기 계산 오류, 견적 버전 혼선에서 시작했습니다.

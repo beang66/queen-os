@@ -12,8 +12,12 @@ export function validateQuoteForIssuance(
   hiddenBreakdownIds: string[] = [],
 ): IssueCheck {
   const reject = (reason: string): IssueCheck => ({ ok: false, reason });
-  if (hiddenBreakdownIds.length) {
-    return reject('숨김 품목을 제외한 견적 금액의 재계산은 아직 지원되지 않습니다. 발행 전 품목 숨김을 해제해 주세요.');
+  const uniqueExcluded = new Set(hiddenBreakdownIds);
+  if (uniqueExcluded.size !== hiddenBreakdownIds.length || hiddenBreakdownIds.some(id => !canonical.breakdowns.some(b=>b.id===id))) {
+    return reject('제외할 품목에 중복되거나 존재하지 않는 ID가 있습니다.');
+  }
+  if (canonical.breakdowns.length && uniqueExcluded.size === canonical.breakdowns.length) {
+    return reject('모든 품목을 제외한 견적은 발행할 수 없습니다.');
   }
   if (!canonical.breakdowns.length) return reject('견적 항목이 없어서 발행할 수 없습니다.');
   if (canonical.validationReport.some(item => item.type === 'ERROR')) {

@@ -6,6 +6,7 @@ import { QuoteStep2Review } from './wizard/QuoteStep2Review';
 import { QuoteStep2Calc } from './wizard/QuoteStep2Calc';
 import { QuoteStep3Summary } from './wizard/QuoteStep3Summary';
 import { DraftStatusBar } from './wizard/DraftStatusBar';
+import { DEFAULT_ADJUSTMENTS } from './wizard/calc/costModel';
 import {
   DraftPayload,
   OrderEntity,
@@ -32,6 +33,7 @@ const DEFAULT_PUBLISH_META: QuotePublishMeta = {
   specialTerms: '실측 후 치수 변경 시 견적 금액이 조정될 수 있습니다.',
   internalMemo: '',
   hiddenBreakdownIds: [],
+  pricingAdjustments: { ...DEFAULT_ADJUSTMENTS },
 };
 
 const STEP_LABELS: Record<number, string> = {
@@ -119,6 +121,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
   // 발행된 버전 이력 (V1, V2, V3 ...) 및 발행 메타데이터
   const [publishedVersions, setPublishedVersions] = useState<QuoteDocument[]>([]);
   const [publishMeta, setPublishMeta] = useState<QuotePublishMeta>(DEFAULT_PUBLISH_META);
+  const effectivePricingAdjustments = { ...DEFAULT_ADJUSTMENTS, ...publishMeta.pricingAdjustments, targetMarginRate };
 
   // ---- 초안(Draft) 연동 --------------------------------------------------
   const draft = useQuoteDraft();
@@ -352,13 +355,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
     }
   };
 
-  // 마진율 변경 시 실시간 원가 다시 계산
-  useEffect(() => {
-    if (step === 3 || calculationResult) {
-      handleCalculate();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetMarginRate]);
+  // Margin and discounts are projected by a shared pure function; no DB recalc is needed on slider changes.
 
   // 계산 이후 주문 정보·품목이 바뀌면 "다시 계산" 안내를 위해 dirty 표시
   useEffect(() => {
@@ -370,7 +367,10 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
 
   // 견적서 발행 실행 (V1) 및 새 버전 발행 (V2, V3 ...)
   const handleSaveFinalQuote = async () => {
-    if (!calculationResult) return;
+    if (!calculationResult || calcDirty) {
+      alert('주문 정보 또는 단가를 다시 계산한 후 발행해 주세요.');
+      return;
+    }
     setSaving(true);
     try {
       // 발행 직전 최신 상태를 초안에 확정 저장한다.
@@ -393,7 +393,7 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
         version: nextVersion,
         parentQuoteId: rootQuote?.id,
         quoteNumber: baseNumber ? `${baseNumber}-V${nextVersion}` : undefined,
-        publishMeta,
+        publishMeta: { ...publishMeta, pricingAdjustments: effectivePricingAdjustments },
         draftId: draft.draftId ?? undefined,
       });
       setSavedQuote(result);
@@ -601,6 +601,9 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
           orderEntity={orderEntity}
           targetMarginRate={targetMarginRate}
           setTargetMarginRate={setTargetMarginRate}
+          pricingAdjustments={effectivePricingAdjustments}
+          onChangeAdjustments={(next) => setPublishMeta(prev => ({ ...prev, pricingAdjustments: next }))}
+          excludedBreakdownIds={publishMeta.hiddenBreakdownIds}
           calculationResult={calculationResult}
           calcLoading={calcLoading}
           calcDirty={calcDirty}
@@ -617,6 +620,8 @@ export const QuoteWizard: React.FC<QuoteWizardProps> = ({
             orderEntity={orderEntity}
             calculationResult={calculationResult}
             targetMarginRate={targetMarginRate}
+            pricingAdjustments={effectivePricingAdjustments}
+            calcDirty={calcDirty}
             quoteTitle={quoteTitle}
             setQuoteTitle={setQuoteTitle}
             publishMeta={publishMeta}

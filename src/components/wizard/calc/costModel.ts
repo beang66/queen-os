@@ -1,13 +1,8 @@
 import { QuoteBreakdownItem, QuoteCalculationResult, ItemCategory } from '../../../types';
+import type { QuotePriceAdjustments } from '../../../types';
 
 /** 원가 계산 단계에서 사용자가 조정하는 값 (결정론적 엔진 결과 위에 클라이언트에서 적용) */
-export interface CostAdjustments {
-  lossRatePct: number;      // 로스율 (%) — 재료비 카테고리에 가산
-  targetMarginRate: number; // 목표 마진율 (%)
-  discountAmount: number;   // 할인액 (원, 공급가에서 차감)
-  surchargeAmount: number;  // 추가금 (원, 공급가에 가산)
-  vatMode: 'EXCLUDED' | 'INCLUDED'; // 부가세 별도 / 포함
-}
+export type CostAdjustments = QuotePriceAdjustments;
 
 export const DEFAULT_ADJUSTMENTS: CostAdjustments = {
   lossRatePct: 3,

@@ -22,6 +22,7 @@ import {
 import { hidesCost, stripQuoteCost } from '../server/sanitize.js';
 import { z } from 'zod';
 import { validateQuoteForIssuance } from '../server/quoteIssuance.js';
+import { projectQuotePrice } from '../src/domain/quotePricing.js';
 import { createQuoteExcel } from '../server/quoteExcel.js';
 
 const router = Router();
@@ -85,16 +86,32 @@ router.post('/', async (req, res) => {
     );
     if (!check.ok) return res.status(409).json({ success: false, error: check.reason });
 
+    const adjustments = body.publishMeta?.pricingAdjustments;
+    if (body.publishMeta?.hiddenBreakdownIds.length && !adjustments) {
+      return res.status(409).json({ success: false, error: '품목 제외 금액 계산 설정이 필요합니다. 화면에서 다시 계산해 주세요.' });
+    }
+    if (adjustments && body.targetMarginRate !== undefined && adjustments.targetMarginRate !== body.targetMarginRate) {
+      return res.status(409).json({ success: false, error: '목표 마진율이 서로 다릅니다. 다시 확인해 주세요.' });
+    }
+    let issuedCalculation = canonicalCalculation;
+    if (adjustments) {
+      try {
+        issuedCalculation = projectQuotePrice(canonicalCalculation, adjustments, body.publishMeta?.hiddenBreakdownIds);
+      } catch (err) {
+        return res.status(409).json({ success: false, error: err instanceof Error ? err.message : '견적 가격 조정 오류' });
+      }
+    }
+
     const saved = await db.saveQuote({
       title: body.title || `${orderEntity.customerName} 고객님 주방가구 맞춤 견적서`,
       status: body.status || 'ISSUED',
-      targetMarginRate: body.targetMarginRate ?? 28,
+      targetMarginRate: adjustments?.targetMarginRate ?? body.targetMarginRate ?? 28,
       version: body.version ?? 1,
       parentQuoteId: body.parentQuoteId || undefined,
       publishMeta: body.publishMeta || undefined,
       quoteNumber: body.quoteNumber || undefined,
       orderEntity,
-      calculationResult: canonicalCalculation,
+      calculationResult: issuedCalculation,
       notes: body.notes || '',
       companyInfo: {
         name: '퀸 주방가구 (Queen Kitchen)',
