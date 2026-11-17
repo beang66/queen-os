@@ -255,7 +255,7 @@ export const QuotePublishMetaSchema = z.object({
 export const SaveQuoteSchema = z.object({
   title: z.string().optional(),
   status: QuoteStatusSchema.optional(),
-  targetMarginRate: z.coerce.number().optional(),
+  targetMarginRate: z.coerce.number().min(0).max(100).optional(),
   orderEntity: OrderEntitySchema,
   calculationResult: QuoteCalculationResultSchema,
   notes: z.string().optional(),

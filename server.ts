@@ -115,7 +115,7 @@ app.use('/api/drafts', requireAuth, denyWrites, draftsRouter);
 app.use('/api/parse-logs', requireAuth, parseLogsRouter);
 
 // 기존 엑셀 다운로드 엔드포인트 호환
-app.post('/api/export/quote-excel', requireAuth, handleExportQuoteExcel);
+app.post('/api/export/quote-excel', requireAuth, denyWrites, handleExportQuoteExcel);
 
 // ----------------------------------------------------
 // 3. GEMINI MULTIMODAL EXTRACTION ENDPOINTS

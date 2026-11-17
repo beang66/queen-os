@@ -20,7 +20,9 @@ import {
   UpdateQuoteSchema,
 } from '../src/schemas.js';
 import { hidesCost, stripQuoteCost } from '../server/sanitize.js';
-import * as XLSX from 'xlsx';
+import { z } from 'zod';
+import { validateQuoteForIssuance } from '../server/quoteIssuance.js';
+import { createQuoteExcel } from '../server/quoteExcel.js';
 
 const router = Router();
 
@@ -75,7 +77,13 @@ router.post('/', async (req, res) => {
     const body = parseBody(SaveQuoteSchema, req, res);
     if (!body) return;
 
-    const { orderEntity, calculationResult, draftId } = body;
+    const { orderEntity, draftId } = body;
+    // Recompute from DB prices, and compare against what the reviewer saw.
+    const canonicalCalculation = await calculateDeterministicQuote(orderEntity);
+    const check = validateQuoteForIssuance(
+      body.calculationResult, canonicalCalculation, body.publishMeta?.hiddenBreakdownIds,
+    );
+    if (!check.ok) return res.status(409).json({ success: false, error: check.reason });
 
     const saved = await db.saveQuote({
       title: body.title || `${orderEntity.customerName} 고객님 주방가구 맞춤 견적서`,
@@ -86,7 +94,7 @@ router.post('/', async (req, res) => {
       publishMeta: body.publishMeta || undefined,
       quoteNumber: body.quoteNumber || undefined,
       orderEntity,
-      calculationResult,
+      calculationResult: canonicalCalculation,
       notes: body.notes || '',
       companyInfo: {
         name: '퀸 주방가구 (Queen Kitchen)',
@@ -139,54 +147,26 @@ router.delete('/:id', async (req, res) => {
 // ----------------------------------------------------
 // 엑셀 내보내기 핸들러
 // ----------------------------------------------------
-export function handleExportQuoteExcel(req: Request, res: Response) {
+const ExportQuoteRequestSchema = z.object({
+  quoteId: z.string().min(1),
+  audience: z.enum(['customer', 'internal']).default('customer'),
+}).strict();
+
+/** Both /api/quotes/excel and legacy /api/export/quote-excel use this secure handler. */
+export async function handleExportQuoteExcel(req: Request, res: Response) {
   try {
-    const quote = req.body;
-    if (!quote || !quote.calculationResult) {
-      return res.status(400).json({ success: false, error: '유효한 견적서 데이터가 필요합니다.' });
+    const body = parseBody(ExportQuoteRequestSchema, req, res);
+    if (!body) return;
+    if (body.audience === 'internal' && !['ADMIN', 'ESTIMATOR'].includes(req.user?.role ?? '')) {
+      return res.status(403).json({ success: false, error: '내부용 원가·마진 자료에 접근할 권한이 없습니다.' });
     }
-
-    const rows = [
-      ['퀸 주방가구 공종별 상세 견적서'],
-      ['견적번호', quote.quoteNumber || '임시견적', '발행일자', new Date().toLocaleDateString('ko-KR')],
-      ['고객명', quote.orderEntity?.customerName || '', '연락처', quote.orderEntity?.contact || ''],
-      ['현장주소', quote.orderEntity?.address || '', '가구형태', quote.orderEntity?.layoutType || ''],
-      [],
-      ['순번', '구분', '품목코드', '품목명 및 사양', '산식/규격', '단위', '수량', '제조원가(단가)', '제조원가(합계)', '공급단가', '공급가액(합계)', '마진율(%)'],
-    ];
-
-    quote.calculationResult.breakdowns.forEach((item: any, idx: number) => {
-      rows.push([
-        idx + 1,
-        item.category,
-        item.code,
-        item.name,
-        item.formula,
-        item.unit,
-        item.quantity,
-        item.costUnitPrice,
-        item.costTotal,
-        item.sellingUnitPrice,
-        item.sellingTotal,
-        `${item.marginRate}%`,
-      ]);
-    });
-
-    rows.push([]);
-    const summary = quote.calculationResult.summary;
-    rows.push(['', '', '', '총 제조원가 (VAT별도)', '', '', '', '', summary.totalManufacturingCost, '', '', '']);
-    rows.push(['', '', '', '총 공급가액 (VAT별도)', '', '', '', '', '', '', summary.totalSellingPrice, '']);
-    rows.push(['', '', '', '총 마진액 / 평균 마진율', '', '', '', '', summary.totalMarginAmount, '', '', `${summary.averageMarginRate}%`]);
-    rows.push(['', '', '', '부가가치세 (VAT 10%)', '', '', '', '', '', '', summary.vatAmount, '']);
-    rows.push(['', '', '', '최종 견적 총액 (VAT포함)', '', '', '', '', '', '', summary.finalGrandTotal, '']);
-
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '견적서_상세');
-
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-    res.setHeader('Content-Disposition', `attachment; filename="queen_quote_${quote.quoteNumber || 'draft'}.xlsx"`);
+    const quote = await db.getQuoteById(body.quoteId);
+    if (!quote) return res.status(404).json({ success: false, error: '발행된 견적서를 찾을 수 없습니다.' });
+    const buffer = createQuoteExcel(quote, body.audience);
+    const safeNo = quote.quoteNumber.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename="queen_quote_${safeNo}_${body.audience}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buffer);
   } catch (err: any) {
