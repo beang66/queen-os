@@ -12,10 +12,9 @@ import {
   ReceiptText,
 } from 'lucide-react';
 import { QuoteCalculationResult, OrderEntity } from '../../types';
+import { quotePriceProjection } from '../../domain/quotePricing';
 import {
   CostAdjustments,
-  DEFAULT_ADJUSTMENTS,
-  computeCost,
   pricingBaseDate,
   classifyLabor,
   won,
@@ -25,6 +24,9 @@ interface QuoteStep2CalcProps {
   orderEntity: OrderEntity;
   targetMarginRate: number;
   setTargetMarginRate: (margin: number) => void;
+  pricingAdjustments: CostAdjustments;
+  onChangeAdjustments: (next: CostAdjustments) => void;
+  excludedBreakdownIds: string[];
   calculationResult: QuoteCalculationResult | null;
   calcLoading: boolean;
   calcDirty?: boolean;
@@ -42,6 +44,9 @@ export const QuoteStep2Calc: React.FC<QuoteStep2CalcProps> = ({
   orderEntity,
   targetMarginRate,
   setTargetMarginRate,
+  pricingAdjustments,
+  onChangeAdjustments,
+  excludedBreakdownIds,
   calculationResult,
   calcLoading,
   calcDirty = false,
@@ -49,19 +54,20 @@ export const QuoteStep2Calc: React.FC<QuoteStep2CalcProps> = ({
   onPrevStep,
   onNextStep,
 }) => {
-  const [adj, setAdj] = useState<Omit<CostAdjustments, 'targetMarginRate'>>({
-    lossRatePct: DEFAULT_ADJUSTMENTS.lossRatePct,
-    discountAmount: 0,
-    surchargeAmount: 0,
-    vatMode: 'EXCLUDED',
-  });
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-
+  const adj = pricingAdjustments;
   const full: CostAdjustments = { ...adj, targetMarginRate };
 
   const computed = useMemo(
-    () => (calculationResult ? computeCost(calculationResult, full) : null),
-    [calculationResult, adj, targetMarginRate]
+    () => {
+      if (!calculationResult) return null;
+      try {
+        return quotePriceProjection(calculationResult, full, excludedBreakdownIds).computed;
+      } catch {
+        return null;
+      }
+    },
+    [calculationResult, adj, targetMarginRate, excludedBreakdownIds]
   );
 
   const baseDate = calculationResult ? pricingBaseDate(calculationResult) : null;
@@ -290,7 +296,7 @@ export const QuoteStep2Calc: React.FC<QuoteStep2CalcProps> = ({
                 <input
                   type="range" min={0} max={15} step={0.5}
                   value={adj.lossRatePct}
-                  onChange={(e) => setAdj({ ...adj, lossRatePct: Number(e.target.value) })}
+                  onChange={(e) => onChangeAdjustments({ ...full, lossRatePct: Number(e.target.value) })}
                   className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                 />
                 <span className="w-14 text-right font-mono font-bold text-blue-600 text-xs">{adj.lossRatePct}%</span>
@@ -321,7 +327,7 @@ export const QuoteStep2Calc: React.FC<QuoteStep2CalcProps> = ({
                 <input
                   type="number" min={0} step={10000}
                   value={adj.discountAmount}
-                  onChange={(e) => setAdj({ ...adj, discountAmount: Math.max(0, Number(e.target.value)) })}
+                  onChange={(e) => onChangeAdjustments({ ...full, discountAmount: Math.max(0, Number(e.target.value)) })}
                   className={`${numField} mt-1`}
                 />
               </label>
@@ -330,7 +336,7 @@ export const QuoteStep2Calc: React.FC<QuoteStep2CalcProps> = ({
                 <input
                   type="number" min={0} step={10000}
                   value={adj.surchargeAmount}
-                  onChange={(e) => setAdj({ ...adj, surchargeAmount: Math.max(0, Number(e.target.value)) })}
+                  onChange={(e) => onChangeAdjustments({ ...full, surchargeAmount: Math.max(0, Number(e.target.value)) })}
                   className={`${numField} mt-1`}
                 />
               </label>
@@ -344,7 +350,7 @@ export const QuoteStep2Calc: React.FC<QuoteStep2CalcProps> = ({
                   <button
                     key={mode}
                     type="button"
-                    onClick={() => setAdj({ ...adj, vatMode: mode })}
+                    onClick={() => onChangeAdjustments({ ...full, vatMode: mode })}
                     className={`py-1.5 rounded-md font-semibold transition-colors ${
                       adj.vatMode === mode ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'
                     }`}
@@ -413,7 +419,7 @@ export const QuoteStep2Calc: React.FC<QuoteStep2CalcProps> = ({
         <button
           type="button"
           onClick={calcDirty ? onCalculate : onNextStep}
-          disabled={errors.length > 0}
+          disabled={errors.length > 0 || (computed.adjustedCost > 0 && computed.discountedSellingPrice <= 0)}
           className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-lg shadow-xs text-xs flex items-center justify-center gap-2 transition-colors"
         >
           {calcDirty ? '변경사항 반영하여 다시 계산' : '계산 확정 및 견적서 확인'}

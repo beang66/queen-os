@@ -243,13 +243,22 @@ export const QuoteCalculationResultSchema = z.object({
 // 견적서 발행 (QuoteDocument)
 // ---------------------------------------------------------------------------
 
+export const QuotePriceAdjustmentsSchema = z.object({
+  lossRatePct: z.number().finite().min(0).max(15),
+  targetMarginRate: z.number().finite().min(0).max(50),
+  discountAmount: z.number().int().min(0).max(100_000_000),
+  surchargeAmount: z.number().int().min(0).max(100_000_000),
+  vatMode: z.enum(['EXCLUDED', 'INCLUDED']),
+}).strict();
+
 export const QuotePublishMetaSchema = z.object({
   validUntilDays: z.number().int().min(0),
   paymentTerms: z.string(),
   exclusions: z.string(),
   specialTerms: z.string(),
   internalMemo: z.string(),
-  hiddenBreakdownIds: z.array(z.string()),
+  hiddenBreakdownIds: z.array(z.string()).max(100),
+  pricingAdjustments: QuotePriceAdjustmentsSchema.optional(),
 });
 
 export const SaveQuoteSchema = z.object({

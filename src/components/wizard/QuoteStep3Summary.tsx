@@ -12,12 +12,15 @@ import {
   ShieldAlert,
   Loader2,
 } from 'lucide-react';
-import { QuoteCalculationResult, OrderEntity, QuoteDocument, QuotePublishMeta } from '../../types';
+import { QuoteCalculationResult, OrderEntity, QuoteDocument, QuotePublishMeta, QuotePriceAdjustments } from '../../types';
+import { projectQuotePrice } from '../../domain/quotePricing';
 
 interface QuoteStep3SummaryProps {
   orderEntity: OrderEntity;
   calculationResult: QuoteCalculationResult;
   targetMarginRate: number;
+  pricingAdjustments: QuotePriceAdjustments;
+  calcDirty: boolean;
   quoteTitle: string;
   setQuoteTitle: (title: string) => void;
   publishMeta: QuotePublishMeta;
@@ -46,6 +49,8 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
   orderEntity,
   calculationResult,
   targetMarginRate,
+  pricingAdjustments,
+  calcDirty,
   quoteTitle,
   setQuoteTitle,
   publishMeta,
@@ -69,16 +74,20 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
 
   const breakdowns = calculationResult.breakdowns || [];
   const hidden = new Set(publishMeta.hiddenBreakdownIds);
-  const visibleRows = breakdowns.filter((b) => !hidden.has(b.id));
-
-  const summary = calculationResult.summary;
-  const visibleSupply = useMemo(
-    () => visibleRows.reduce((a, b) => a + b.sellingTotal, 0),
-    [visibleRows]
-  );
-  const supply = hidden.size > 0 ? visibleSupply : summary.totalSellingPrice;
-  const vat = Math.round(supply * 0.1);
-  const grand = supply + vat;
+  const preview = useMemo(() => {
+    try {
+      return { result: projectQuotePrice(calculationResult, pricingAdjustments, publishMeta.hiddenBreakdownIds), error: null };
+    } catch (err) {
+      return { result: calculationResult, error: err instanceof Error ? err.message : '가격 계산을 확인해 주세요.' };
+    }
+  }, [calculationResult, pricingAdjustments, publishMeta.hiddenBreakdownIds]);
+  // After publication, display the exact server-persisted amounts, not a local recomputation.
+  const displayed = savedQuote?.calculationResult ?? preview.result;
+  const visibleRows = displayed.breakdowns;
+  const summary = displayed.summary;
+  const supply = summary.totalSellingPrice;
+  const vat = summary.vatAmount;
+  const grand = summary.finalGrandTotal;
 
   const issueDate = savedQuote ? new Date(savedQuote.createdAt) : new Date();
   const validUntil = new Date(issueDate);
@@ -150,7 +159,7 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
             <button
               type="button"
               onClick={onSaveQuote}
-              disabled={saving}
+              disabled={saving || calcDirty || !!preview.error}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow-xs"
             >
               <Send className="w-3.5 h-3.5" />
@@ -255,8 +264,8 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-xs space-y-2">
-            <h3 className="text-xs font-bold text-gray-800">품목별 노출 여부</h3>
-            <p className="text-[11px] text-gray-500">체크 해제한 품목은 고객 견적서 명세에서 제외되고 금액도 합산되지 않습니다.</p>
+            <h3 className="text-xs font-bold text-gray-800">견적에서 제외할 품목</h3>
+            <p className="text-[11px] text-gray-500">체크 해제한 품목은 금액에서도 제외합니다. 서버가 제외 후 금액을 다시 계산합니다.</p>
             <ul className="max-h-56 overflow-y-auto divide-y divide-gray-100">
               {breakdowns.map((b) => {
                 const shown = !hidden.has(b.id);
@@ -305,6 +314,7 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
                 <div className="font-bold text-slate-900">퀸 주방가구</div>
                 <div>대표 김대표 · 123-45-67890</div>
                 <div>031-000-0000</div>
+                <div className="font-bold text-amber-700">예시 사업자 정보 · 대외 발송 금지</div>
               </div>
             </div>
 
@@ -363,6 +373,11 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
         </div>
       </div>
 
+      {(!published && (preview.error || calcDirty)) && (
+        <div role="alert" className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 p-3 rounded-lg">
+          {preview.error ?? '입력 내용이 변경되었습니다. 원가를 다시 계산한 후 발행해 주세요.'}
+        </div>
+      )}
       {/* 하단 네비 */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-xs flex items-center justify-between gap-3 print:hidden">
         <button
@@ -381,13 +396,13 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
             className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-5 py-2.5 rounded-lg text-xs flex items-center gap-2"
           >
             <GitBranch className="w-4 h-4" />
-            새 버전으로 수정 (V{nextVersion + 1})
+            새 버전으로 수정 (V{nextVersion})
           </button>
         ) : (
           <button
             type="button"
             onClick={onSaveQuote}
-            disabled={saving}
+            disabled={saving || calcDirty || !!preview.error}
             className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold px-5 py-2.5 rounded-lg text-xs flex items-center gap-2"
           >
             <Send className="w-4 h-4" />
