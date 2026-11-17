@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "pricing_item" (
     "id"            TEXT NOT NULL,
     "code"          TEXT NOT NULL,
