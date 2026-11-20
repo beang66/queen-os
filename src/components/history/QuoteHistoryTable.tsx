@@ -2,11 +2,20 @@ import React from 'react';
 import { Eye, Trash2 } from 'lucide-react';
 import { QuoteDocument, QuoteStatus } from '../../types';
 
+export const canDeleteQuote = (canEditQuotes: boolean) => canEditQuotes;
+
+const STATUS_LABEL: Record<QuoteStatus, string> = {
+  DRAFT: '임시저장', ISSUED: '견적발행', NEGOTIATING: '협상중', CONFIRMED: '견적확정',
+  IN_PRODUCTION: '제작중', COMPLETED: '시공완료', CANCELLED: '취소됨',
+};
+
 interface QuoteHistoryTableProps {
   quotes: QuoteDocument[];
   onSelectQuote: (quote: QuoteDocument) => void;
   onUpdateStatus: (id: string, status: QuoteStatus) => void;
   onDeleteQuote: (id: string) => void;
+  canEditQuotes: boolean;
+  canSeeCost: boolean;
 }
 
 /**
@@ -17,10 +26,12 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
   onSelectQuote,
   onUpdateStatus,
   onDeleteQuote,
+  canEditQuotes,
+  canSeeCost,
 }) => {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold">
@@ -51,10 +62,10 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
                     {quote.orderEntity.customerName}
                   </td>
                   <td className="py-3 px-3.5 text-center font-bold text-emerald-600">
-                    {quote.targetMarginRate}%
+                    {canSeeCost ? `${quote.targetMarginRate}%` : '—'}
                   </td>
                   <td className="py-3 px-3.5 text-right text-gray-600">
-                    ₩{(quote.calculationResult?.summary?.totalManufacturingCost || 0).toLocaleString()}
+                    {canSeeCost ? `₩${(quote.calculationResult?.summary?.totalManufacturingCost || 0).toLocaleString()}` : '권한 필요'}
                   </td>
                   <td className="py-3 px-3.5 text-right font-extrabold text-blue-700">
                     ₩{(quote.calculationResult?.summary?.totalSellingPrice || 0).toLocaleString()}
@@ -62,6 +73,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
                   <td className="py-3 px-3.5 text-center font-sans">
                     <select
                       value={quote.status}
+                      disabled={!canEditQuotes}
                       onChange={(e) => onUpdateStatus(quote.id, e.target.value as QuoteStatus)}
                       className="bg-transparent border border-gray-200 rounded px-1.5 py-0.5 text-[11px] font-semibold focus:outline-none"
                     >
@@ -87,7 +99,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                      <button
+                      {canDeleteQuote(canEditQuotes) && <button
                         type="button"
                         onClick={() => {
                           if (confirm(`견적서 #${quote.quoteNumber}를 삭제하시겠습니까?`)) {
@@ -98,7 +110,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
                         title="삭제"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      </button>}
                     </div>
                   </td>
                 </tr>
@@ -106,6 +118,33 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
             )}
           </tbody>
         </table>
+      </div>
+      <div className="md:hidden divide-y divide-gray-100" aria-label="견적 이력">
+        {quotes.length === 0 ? (
+          <p className="px-4 py-10 text-center text-sm text-gray-500">저장된 견적서 이력이 없습니다.</p>
+        ) : quotes.map((quote) => (
+          <article key={quote.id} className="p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-blue-700">#{quote.quoteNumber} · V{quote.version ?? 1}</p>
+                <h3 className="mt-1 text-sm font-bold text-gray-900 break-words">{quote.title}</h3>
+                <p className="mt-1 text-xs text-gray-600">{quote.orderEntity.customerName} · {new Date(quote.createdAt).toLocaleDateString('ko-KR')}</p>
+              </div>
+              <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] font-bold">{STATUS_LABEL[quote.status]}</span>
+            </div>
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <span className="block text-[11px] text-gray-500">견적 공급가</span>
+                <strong className="text-base text-blue-800">₩{(quote.calculationResult?.summary?.totalSellingPrice || 0).toLocaleString()}</strong>
+                {canSeeCost && <span className="block mt-1 text-[11px] text-gray-500">제조원가 ₩{(quote.calculationResult?.summary?.totalManufacturingCost || 0).toLocaleString()}</span>}
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => onSelectQuote(quote)} className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-bold text-gray-700">열기</button>
+                {canDeleteQuote(canEditQuotes) && <button type="button" onClick={() => confirm(`견적서 #${quote.quoteNumber}를 삭제하시겠습니까?`) && onDeleteQuote(quote.id)} className="min-h-11 min-w-11 rounded-lg border border-rose-200 text-rose-700" aria-label={`견적서 #${quote.quoteNumber} 삭제`}><Trash2 className="mx-auto w-4 h-4" /></button>}
+              </div>
+            </div>
+          </article>
+        ))}
       </div>
     </div>
   );

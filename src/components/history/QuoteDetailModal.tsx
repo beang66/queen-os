@@ -5,12 +5,13 @@ import { QuoteDocument } from '../../types';
 interface QuoteDetailModalProps {
   quote: QuoteDocument | null;
   onClose: () => void;
+  canSeeCost: boolean;
 }
 
 /**
  * 저장된 견적서 상세 정보 팝업 모달 컴포넌트
  */
-export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({ quote, onClose }) => {
+export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({ quote, onClose, canSeeCost }) => {
   const [copied, setCopied] = useState<boolean>(false);
 
   if (!quote) return null;
@@ -72,12 +73,12 @@ export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({ quote, onClo
             </div>
             <div>
               <span className="text-slate-500 font-medium">적용 마진율</span>
-              <div className="font-mono font-bold text-emerald-600 mt-0.5">{quote.targetMarginRate}%</div>
+              <div className="font-mono font-bold text-emerald-600 mt-0.5">{canSeeCost ? `${quote.targetMarginRate}%` : '권한 필요'}</div>
             </div>
             <div>
               <span className="text-slate-500 font-medium">제조 원가</span>
               <div className="font-mono font-bold text-slate-700 mt-0.5">
-                ₩{(quote.calculationResult.summary.totalManufacturingCost || 0).toLocaleString()}
+                {canSeeCost ? `₩${(quote.calculationResult.summary.totalManufacturingCost || 0).toLocaleString()}` : '권한 필요'}
               </div>
             </div>
             <div>
@@ -123,7 +124,7 @@ export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({ quote, onClo
                   <th className="py-2 px-3">카테고리</th>
                   <th className="py-2 px-3">품목명</th>
                   <th className="py-2 px-3 text-right">수량</th>
-                  <th className="py-2 px-3 text-right">원가</th>
+                  {canSeeCost && <th className="py-2 px-3 text-right">원가</th>}
                   <th className="py-2 px-3 text-right">공급가</th>
                 </tr>
               </thead>
@@ -135,9 +136,9 @@ export const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({ quote, onClo
                     <td className="py-2 px-3 text-right">
                       {item.quantity} {item.unit}
                     </td>
-                    <td className="py-2 px-3 text-right text-slate-600">
+                    {canSeeCost && <td className="py-2 px-3 text-right text-slate-600">
                       ₩{(item.costTotal || 0).toLocaleString()}
-                    </td>
+                    </td>}
                     <td className="py-2 px-3 text-right font-bold text-blue-600">
                       ₩{(item.sellingTotal || 0).toLocaleString()}
                     </td>

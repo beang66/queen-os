@@ -27,6 +27,8 @@ export const KitchenItemsTable: React.FC<KitchenItemsTableProps> = ({ items, set
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
 
   const remove = (id: string) => {
+    const item = items.find((candidate) => candidate.id === id);
+    if (!item || !window.confirm(`'${item.name || '이름 없는 품목'}' 품목을 삭제하시겠습니까?`)) return;
     setItems((prev) => prev.filter((i) => i.id !== id));
     if (editingId === id) setEditingId(null);
   };
@@ -65,20 +67,26 @@ export const KitchenItemsTable: React.FC<KitchenItemsTableProps> = ({ items, set
           <Refrigerator className="w-4 h-4 text-gray-500 mt-0.5" />
           <div>
             <h4 className="text-xs font-bold text-gray-800">주방 구성 품목</h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">추출된 품목과 규격을 확인하고 수량을 조정하세요.</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">품목별 규격·수량·단위와 단가 연결을 모두 확인하세요.</p>
           </div>
         </div>
         <button
           type="button"
           onClick={add}
-          className="shrink-0 flex items-center gap-1 rounded-lg border border-gray-200 hover:border-blue-400 bg-white px-2.5 py-1.5 text-[11px] font-bold text-gray-600 hover:text-blue-600 transition-colors"
+          className="shrink-0 min-h-11 flex items-center gap-1 rounded-lg border border-gray-200 hover:border-blue-400 bg-white px-3 text-xs font-bold text-gray-600 hover:text-blue-600 transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           품목 추가
         </button>
       </div>
 
-      <div className="overflow-x-auto">
+      {items.some((item) => item.status === 'NEEDS_PRICING') && (
+        <p role="alert" className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-800">
+          단가 연결이 필요한 품목 {items.filter((item) => item.status === 'NEEDS_PRICING').length}건이 있습니다. 계산 전에 각 카드의 단가 품목을 선택하세요.
+        </p>
+      )}
+
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse min-w-[760px]">
           <thead>
             <tr className="bg-slate-50 text-gray-500">
@@ -225,6 +233,53 @@ export const KitchenItemsTable: React.FC<KitchenItemsTableProps> = ({ items, set
             )}
           </tbody>
         </table>
+      </div>
+      <div className="md:hidden space-y-3" aria-label="주방 구성 품목 모바일 편집">
+        {items.map((it, index) => {
+          const meta = STATUS_META[it.status];
+          const linkable = pricingItems.filter((p) => p.category === it.category);
+          const prefix = `mobile-item-${it.id}`;
+          return (
+            <article key={it.id} className="rounded-xl border border-gray-200 bg-slate-50/60 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-xs text-gray-700">품목 {index + 1}</strong>
+                <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold ${meta.cls}`}><StatusIcon status={it.status} />{meta.label}</span>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <label htmlFor={`${prefix}-name`} className="text-xs font-semibold text-gray-700">품목명
+                  <input id={`${prefix}-name`} className={`${cellInput} mt-1 min-h-11`} value={it.name} placeholder="품목명" onChange={(e) => update(it.id, { name: e.target.value, source: 'MANUAL' })} />
+                </label>
+                <label htmlFor={`${prefix}-spec`} className="text-xs font-semibold text-gray-700">규격 / 산출 기준
+                  <input id={`${prefix}-spec`} className={`${cellInput} mt-1 min-h-11`} value={it.spec} placeholder="규격 / 산출 기준" onChange={(e) => update(it.id, { spec: e.target.value, source: 'MANUAL' })} />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label htmlFor={`${prefix}-quantity`} className="text-xs font-semibold text-gray-700">수량
+                    <input id={`${prefix}-quantity`} type="number" inputMode="decimal" min="0" className={`${cellInput} mt-1 min-h-11`} value={it.quantity} onChange={(e) => update(it.id, { quantity: Number(e.target.value) })} />
+                  </label>
+                  <label htmlFor={`${prefix}-unit`} className="text-xs font-semibold text-gray-700">단위
+                    <select id={`${prefix}-unit`} className={`${cellInput} mt-1 min-h-11`} value={it.unit} onChange={(e) => update(it.id, { unit: e.target.value })}>{UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
+                  </label>
+                </div>
+                <label htmlFor={`${prefix}-category`} className="text-xs font-semibold text-gray-700">카테고리
+                  <select id={`${prefix}-category`} className={`${cellInput} mt-1 min-h-11`} value={it.category} onChange={(e) => update(it.id, { category: e.target.value as ReviewLineItem['category'], linkedPricingId: null, status: 'NEEDS_PRICING' })}>
+                    <option value="CARCASS">캐비닛/몸통</option><option value="DOOR">도어/마감재</option><option value="COUNTERTOP">상판/인조대리석</option><option value="HARDWARE">하드웨어</option><option value="APPLIANCE">기기/싱크볼/수전</option><option value="LABOR">시공 및 가공비</option><option value="ACCESSORY">부자재/기타</option>
+                  </select>
+                </label>
+                <label htmlFor={`${prefix}-pricing`} className="text-xs font-semibold text-gray-700">단가 DB 품목 연결 <span className="text-orange-700">{it.status === 'NEEDS_PRICING' ? '(필수 확인)' : ''}</span>
+                  <select id={`${prefix}-pricing`} className={`${cellInput} mt-1 min-h-11 ${it.linkedPricingId ? '' : 'border-orange-400 bg-orange-50'}`} value={it.linkedPricingId ?? ''} onChange={(e) => linkPricing(it.id, e.target.value)}>
+                    <option value="">{linkable.length ? '단가 품목을 선택하세요' : '연결 가능한 단가 품목 없음'}</option>
+                    {linkable.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name} · {p.sellingPrice.toLocaleString()}원/{p.unit}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="flex items-center justify-between gap-2 border-t border-gray-200 pt-3">
+                <label className="min-h-11 flex items-center gap-2 text-xs font-semibold text-gray-700"><input type="checkbox" className="w-5 h-5" checked={it.status === 'MANUAL'} onChange={(e) => update(it.id, { status: e.target.checked ? 'MANUAL' : it.linkedPricingId ? 'CONFIRMED' : 'NEEDS_PRICING' })} />직접 입력(단가 연결 제외)</label>
+                <button type="button" onClick={() => remove(it.id)} className="min-h-11 min-w-11 rounded-lg border border-rose-200 text-rose-700" aria-label={`${it.name || `품목 ${index + 1}`} 삭제`}><Trash2 className="mx-auto w-4 h-4" /></button>
+              </div>
+            </article>
+          );
+        })}
+        {items.length === 0 && <p className="py-8 text-center text-sm text-gray-500">구성 품목이 없습니다. 품목을 추가해 주세요.</p>}
       </div>
     </div>
   );
