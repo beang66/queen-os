@@ -36,19 +36,22 @@ const TextField: React.FC<{
   onChange: (v: string) => void;
   helper?: string;
   className?: string;
-}> = ({ label, required, value, placeholder, onChange, helper, className }) => {
+  id: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+  autoComplete?: string;
+}> = ({ label, required, value, placeholder, onChange, helper, className, id, inputMode, autoComplete }) => {
   const filled = !!value.trim();
   return (
     <div className={className}>
-      <label className="block text-[11px] font-medium text-gray-500 mb-1">
+      <label htmlFor={id} className="block text-xs font-medium text-gray-600 mb-1">
         {label} {required && <span className="text-orange-500">*</span>}
       </label>
       <div className={fieldBox(filled)}>
-        <input className={bareInput} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+        <input id={id} className={`${bareInput} min-h-10`} value={value} placeholder={placeholder} inputMode={inputMode} autoComplete={autoComplete} aria-required={required} aria-invalid={required && !filled} aria-describedby={!filled && helper ? `${id}-error` : undefined} onChange={(e) => onChange(e.target.value)} />
         {filled ? <ExtractedTag /> : <NeedsCheckTag />}
       </div>
       {!filled && helper && (
-        <p className="text-[10px] text-orange-600 font-medium mt-1 flex items-center gap-1">
+        <p id={`${id}-error`} role="alert" className="text-[11px] text-orange-700 font-medium mt-1 flex items-center gap-1">
           <AlertCircle className="w-3 h-3" />
           {helper}
         </p>
@@ -70,7 +73,7 @@ export const CustomerSiteInfo: React.FC<CustomerSiteInfoProps> = ({ orderEntity,
   const set = (patch: Partial<OrderEntity>) => setOrderEntity((prev) => ({ ...prev, ...patch }));
 
   return (
-    <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4 space-y-3">
+    <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4 space-y-3">
       <div className="flex items-center gap-1.5">
         <UserRound className="w-4 h-4 text-blue-500" />
         <h4 className="text-xs font-bold text-gray-800">고객 및 현장 정보</h4>
@@ -78,43 +81,45 @@ export const CustomerSiteInfo: React.FC<CustomerSiteInfoProps> = ({ orderEntity,
 
       {/* 1행: 고객명 / 연락처 / 현장 주소 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <TextField label="고객명" required value={orderEntity.customerName} placeholder="고객명" onChange={(v) => set({ customerName: v })} helper="고객명을 입력해주세요." />
-        <TextField label="연락처" required value={orderEntity.contact} placeholder="010-0000-0000" onChange={(v) => set({ contact: v })} helper="연락처를 입력해주세요." />
-        <TextField label="현장 주소" required value={orderEntity.address} placeholder="현장 주소" onChange={(v) => set({ address: v })} helper="현장 주소를 입력해주세요." />
+        <TextField id="customer-name" label="고객명" required value={orderEntity.customerName} placeholder="고객명" autoComplete="name" onChange={(v) => set({ customerName: v })} helper="고객명을 입력해 주세요." />
+        <TextField id="customer-contact" label="연락처" required value={orderEntity.contact} placeholder="010-0000-0000" inputMode="tel" autoComplete="tel" onChange={(v) => set({ contact: v })} helper="연락처를 입력해 주세요." />
+        <TextField id="site-address" label="현장 주소" required value={orderEntity.address} placeholder="현장 주소" autoComplete="street-address" onChange={(v) => set({ address: v })} helper="현장 주소를 입력해 주세요." />
       </div>
 
       {/* 2행: 프로젝트명 / 상담일 / 희망 시공일 / 고객 유형 / 담당자 */}
       <div className="grid grid-cols-2 md:grid-cols-12 gap-3">
         <TextField
           className="col-span-2 md:col-span-4"
+          id="project-name"
           label="프로젝트명"
+          required
           value={orderEntity.projectName ?? ''}
           placeholder="예: 서초 샘플아파트 주방 리모델링"
           onChange={(v) => set({ projectName: v })}
-          helper="프로젝트명을 확인해주세요."
+          helper="현장에서 찾기 쉬운 프로젝트명을 입력해 주세요."
         />
 
         <div className="md:col-span-2">
-          <label className="block text-[11px] font-medium text-gray-500 mb-1">
+          <label htmlFor="consult-date" className="block text-[11px] font-medium text-gray-500 mb-1">
             상담일 <span className="text-orange-500">*</span>
           </label>
-          <input type="date" className={selectCls} value={orderEntity.consultDate ?? ''} onChange={(e) => set({ consultDate: e.target.value })} />
+          <input id="consult-date" type="date" className={selectCls} value={orderEntity.consultDate ?? ''} aria-required="true" aria-invalid={!orderEntity.consultDate} onChange={(e) => set({ consultDate: e.target.value })} />
           <BelowTag filled={!!orderEntity.consultDate} />
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-[11px] font-medium text-gray-500 mb-1">
+          <label htmlFor="delivery-date" className="block text-[11px] font-medium text-gray-500 mb-1">
             희망 시공일 <span className="text-orange-500">*</span>
           </label>
-          <input type="date" className={selectCls} value={orderEntity.deliveryDate ?? ''} onChange={(e) => set({ deliveryDate: e.target.value })} />
+          <input id="delivery-date" type="date" className={selectCls} value={orderEntity.deliveryDate ?? ''} aria-required="true" aria-invalid={!orderEntity.deliveryDate} onChange={(e) => set({ deliveryDate: e.target.value })} />
           <BelowTag filled={!!orderEntity.deliveryDate} />
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-[11px] font-medium text-gray-500 mb-1">
+          <label htmlFor="customer-type" className="block text-[11px] font-medium text-gray-500 mb-1">
             고객 유형 <span className="text-orange-500">*</span>
           </label>
-          <select className={selectCls} value={orderEntity.customerType ?? ''} onChange={(e) => set({ customerType: e.target.value })}>
+          <select id="customer-type" className={selectCls} value={orderEntity.customerType ?? ''} aria-required="true" aria-invalid={!orderEntity.customerType} onChange={(e) => set({ customerType: e.target.value })}>
             <option value="">선택하세요</option>
             <option value="일반 고객">일반 고객</option>
             <option value="인테리어 업체">인테리어 업체</option>
@@ -129,10 +134,10 @@ export const CustomerSiteInfo: React.FC<CustomerSiteInfoProps> = ({ orderEntity,
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-[11px] font-medium text-gray-500 mb-1">
+          <label htmlFor="manager" className="block text-[11px] font-medium text-gray-500 mb-1">
             담당자 <span className="text-orange-500">*</span>
           </label>
-          <select className={selectCls} value={orderEntity.manager ?? ''} onChange={(e) => set({ manager: e.target.value })}>
+          <select id="manager" className={selectCls} value={orderEntity.manager ?? ''} aria-required="true" aria-invalid={!orderEntity.manager} onChange={(e) => set({ manager: e.target.value })}>
             <option value="">선택하세요</option>
             <option value="문하윤">문하윤</option>
             <option value="안소연">안소연</option>

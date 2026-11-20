@@ -8,6 +8,7 @@ import { SystemDiagram } from './components/SystemDiagram';
 import { ParseAccuracyDashboard } from './components/ParseAccuracyDashboard';
 import { ToastNotification } from './components/common/ToastNotification';
 import { LoginPage } from './components/LoginPage';
+import { WorkOverview } from './components/WorkOverview';
 import { useAuth } from './hooks/useAuth';
 import { ParsedPriceItem, PricingItem, QuoteDocument, QuoteStatus } from './types';
 import { queryClient } from './lib/queryClient';
@@ -23,6 +24,7 @@ import {
   useUpdateQuote,
   useDeleteQuote,
   QUOTES_QUERY_KEY,
+  useDrafts,
 } from './hooks/queries';
 
 /**
@@ -36,7 +38,7 @@ import {
  */
 function MainApp() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, can } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -57,8 +59,11 @@ function MainApp() {
   // ---------------------------------------------------------------------------
   // 1. TanStack Query 데이터 페칭 (캐시 및 실시간 동기화)
   // ---------------------------------------------------------------------------
-  const { data: pricingItems = [] } = usePricingItems();
-  const { data: quotes = [] } = useQuotes();
+  const pricingQuery = usePricingItems();
+  const quotesQuery = useQuotes();
+  const draftsQuery = useDrafts('ACTIVE');
+  const pricingItems = pricingQuery.data ?? [];
+  const quotes = quotesQuery.data ?? [];
 
   // 단가표 관련 뮤테이션
   const addPricingItemMutation = useAddPricingItem();
@@ -169,7 +174,7 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] text-[#1a1a1a] flex flex-col font-sans antialiased">
+    <div className="min-h-screen bg-[var(--worktop)] text-[var(--ink)] flex flex-col font-sans antialiased">
       {/* Toast Notification */}
       <ToastNotification message={toastMessage} />
 
@@ -177,16 +182,35 @@ function MainApp() {
       <Header
         pricingCount={pricingItems.length}
         quotesCount={quotes.length}
+        canEditQuotes={can.editQuotes}
+        canManagePricing={can.managePricing}
         onLogout={handleLogout}
       />
 
       {/* Main Content Area — React Router Routes */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 lg:px-6 py-4">
         <Routes>
-          {/* 1. 신규 견적 작성 (메인) */}
+          {/* 1. 업무 홈 */}
           <Route
             path="/"
             element={
+              <WorkOverview
+                quotes={quotes}
+                drafts={draftsQuery.data ?? []}
+                loading={quotesQuery.isLoading || draftsQuery.isLoading}
+                error={quotesQuery.error?.message || draftsQuery.error?.message || null}
+                canEditQuotes={can.editQuotes}
+                canSeeCost={can.seeCost}
+                onRetry={() => {
+                  void quotesQuery.refetch();
+                  void draftsQuery.refetch();
+                }}
+              />
+            }
+          />
+          <Route
+            path="/wizard"
+            element={can.editQuotes ? (
               <QuoteWizard
                 pricingItems={pricingItems}
                 onSaveQuote={handleSaveQuote}
@@ -199,14 +223,13 @@ function MainApp() {
                   }
                 }}
               />
-            }
+            ) : <Navigate to="/" replace />}
           />
-          <Route path="/wizard" element={<Navigate to="/" replace />} />
 
           {/* 2. 단가표 관리 */}
           <Route
             path="/pricing"
-            element={
+            element={can.managePricing ? (
               <PricingDbManager
                 items={pricingItems}
                 onAddItem={handleAddPricingItem}
@@ -215,7 +238,7 @@ function MainApp() {
                 onResetSeed={handleResetSeed}
                 onApplyBulkItems={handleApplyToPricingDb}
               />
-            }
+            ) : <Navigate to="/" replace />}
           />
 
           {/* 3. 견적 관리 및 견적서 공유 링크 (/quotes/:id) */}
@@ -229,8 +252,10 @@ function MainApp() {
                 }}
                 onUpdateStatus={handleUpdateQuoteStatus}
                 onDeleteQuote={handleDeleteQuote}
+                canEditQuotes={can.editQuotes}
+                canSeeCost={can.seeCost}
                 onResumeDraft={(id) => {
-                  navigate(`/?draftId=${id}`);
+                  navigate(`/wizard?draftId=${id}`);
                 }}
               />
             }
@@ -245,8 +270,10 @@ function MainApp() {
                 }}
                 onUpdateStatus={handleUpdateQuoteStatus}
                 onDeleteQuote={handleDeleteQuote}
+                canEditQuotes={can.editQuotes}
+                canSeeCost={can.seeCost}
                 onResumeDraft={(id) => {
-                  navigate(`/?draftId=${id}`);
+                  navigate(`/wizard?draftId=${id}`);
                 }}
               />
             }
@@ -264,19 +291,8 @@ function MainApp() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 py-3 text-xs text-gray-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-700">QUEEN KITCHEN SYSTEM</span>
-            <span className="text-gray-300">|</span>
-            <span>퀸 주방가구 스마트 견적 & 원가 자동화 시스템</span>
-          </div>
-          <div className="font-mono text-[11px] text-gray-500 flex items-center gap-3">
-            <span className="text-blue-600 font-semibold">GEMINI 3.7 FLASH</span>
-            <span>·</span>
-            <span className="text-green-600 font-semibold">DETERMINISTIC 100% FORMULA</span>
-          </div>
-        </div>
+      <footer className="border-t border-[var(--line)] py-4 text-xs text-[var(--muted)]">
+        <div className="max-w-7xl mx-auto px-4">Queen OS · 주방가구 견적 업무</div>
       </footer>
     </div>
   );

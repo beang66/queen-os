@@ -337,7 +337,7 @@ export const QuoteStep3Summary: React.FC<QuoteStep3SummaryProps> = ({
 
             <div>
               <h3 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">견적 명세</h3>
-              <div className="overflow-x-auto">
+              <div className="quote-preview-breakdown">
                 <table className="w-full text-left text-[11px] border border-slate-200 border-collapse">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-bold">

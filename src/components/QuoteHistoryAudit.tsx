@@ -13,6 +13,8 @@ interface QuoteHistoryAuditProps {
   onDeleteQuote: (id: string) => Promise<void>;
   /** 초안을 신규 견적 탭에서 이어서 작성 */
   onResumeDraft: (id: string) => void;
+  canEditQuotes: boolean;
+  canSeeCost: boolean;
 }
 
 /**
@@ -24,6 +26,8 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
   onUpdateStatus,
   onDeleteQuote,
   onResumeDraft,
+  canEditQuotes,
+  canSeeCost,
 }) => {
   const navigate = useNavigate();
   const { id: quoteUrlId } = useParams<{ id?: string }>();
@@ -61,7 +65,7 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* 0. 작성 중인 견적 초안 */}
-      <DraftListPanel onResumeDraft={onResumeDraft} />
+      {canEditQuotes && <DraftListPanel onResumeDraft={onResumeDraft} />}
 
       {/* 1. 검색어 & 상태 필터 바 */}
       <QuoteHistoryFilter
@@ -82,11 +86,14 @@ export const QuoteHistoryAudit: React.FC<QuoteHistoryAuditProps> = ({
         }}
         onUpdateStatus={onUpdateStatus}
         onDeleteQuote={onDeleteQuote}
+        canEditQuotes={canEditQuotes}
+        canSeeCost={canSeeCost}
       />
 
       {/* 3. 견적서 상세 정보 팝업 모달 */}
       <QuoteDetailModal
         quote={selectedQuote}
+        canSeeCost={canSeeCost}
         onClose={() => {
           setSelectedQuote(null);
           navigate('/history');

@@ -37,7 +37,18 @@ export const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onSel
   ];
 
   return (
-    <div className="flex items-stretch gap-1.5 mb-4">
+    <section aria-labelledby="wizard-progress-heading" className="wizard-progress bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-4">
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <p className="text-[11px] font-bold text-emerald-700 mb-1">견적 작성 · {currentStep}/4단계</p>
+          <h1 id="wizard-progress-heading" className="text-base font-bold text-gray-900">{steps[currentStep - 1].title}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{steps[currentStep - 1].description}</p>
+        </div>
+        <p className="hidden sm:block text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 max-w-xs">
+          발행 전 규격과 계산 결과를 반드시 사람이 확인하세요.
+        </p>
+      </div>
+      <div className="wizard-stage-list flex items-stretch gap-1.5" role="list" aria-label="견적 작성 단계">
       {steps.map((item, idx) => {
         const isActive = currentStep === item.stepNum;
         const isDone = currentStep > item.stepNum;
@@ -47,7 +58,10 @@ export const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onSel
             <button
               type="button"
               onClick={() => onSelectStep?.(item.stepNum)}
-              className={`flex-1 flex items-center gap-3 py-3 px-4 rounded-xl border text-left transition-all ${
+              aria-current={isActive ? 'step' : undefined}
+              aria-label={`${item.stepNum}단계 ${item.title}${isDone ? ', 완료' : isActive ? ', 현재 단계' : ''}`}
+              role="listitem"
+              className={`wizard-stage flex-1 flex items-center gap-3 py-3 px-4 rounded-xl border text-left transition-all ${
                 isActive
                   ? 'bg-[#1e293b] border-[#1e293b] text-white shadow-sm'
                   : isDone
@@ -85,13 +99,14 @@ export const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onSel
             </button>
 
             {idx < steps.length - 1 && (
-              <div className="flex items-center">
+              <div className="wizard-stage-chevron flex items-center" aria-hidden="true">
                 <ChevronRight className="w-4 h-4 text-gray-300" />
               </div>
             )}
           </React.Fragment>
         );
       })}
-    </div>
+      </div>
+    </section>
   );
 };
